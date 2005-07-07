@@ -47,6 +47,9 @@
     ;; Only keep 5 last backup copies around (the default is 10)
     (setq ebackup-max-copies 5))
 
+;; Interpret ANSI color codes in grep output
+(require 'compilation-colorization nil t)
+
 ;;; Set general settings
 ;; aspell rocks.  ispell sucks.  Use aspell if it's available
 (if (executable-find "aspell")
@@ -56,11 +59,6 @@
 ;; TERM to "Emacs".  It's basically a vt100 emulator (just like every
 ;; other terminal emulator out there)
 (setenv "TERM" "vt100")
-
-;; Make grep not spit out color codes (this overrides some of the hard
-;; work grep-compute-defaults does to figure out the grep-command, but
-;; shouldn't cause major problems)
-(setq grep-command "grep -n --color=none -e")
 
 ;; Ange FTP really slows down filename completion, so disable this
 (let ((new-fnha ())

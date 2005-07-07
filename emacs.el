@@ -27,6 +27,8 @@
 ;; * C-x C-c should be close-dwim (close the current frame unless it's
 ;;   the only frame, possibly closing gnuclient as well)
 ;; * Standardize keys for comment region and compile
+;; * Make arrows automatically skip over basic-offset spaces to
+;;   emulate tab-like motion
 ;;
 ;;
 ;; Thing I think are fixed, but need more testing
@@ -36,18 +38,27 @@
 ;; * ebackup
 ;; * grep decolorization (really, there should be a colorizing filter)
 
-; Set appropriate load-path
-(if (not (file-accessible-directory-p "~/sys/elisp"))
-    (error "Failed to find load path")
-  (add-to-list 'load-path "~/sys/elisp")
-  (if (not (file-accessible-directory-p "~/sys/elisp/extra"))
-      (message "Failed to find user-local packages")
-    (add-to-list 'load-path "~/sys/elisp/extra")))
+;; Set appropriate load-path
+(defun atc:add-to-load-path-maybe (path msg append fatal)
+  (if (not (file-accessible-directory-p path))
+      (if fatal
+          (error msg)
+        (message msg))
+    (add-to-list 'load-path path append)))
+(atc:add-to-load-path-maybe
+ "~/sys/elisp" "Failed to find elisp directory" nil t)
+(atc:add-to-load-path-maybe
+ "~/sys/elisp/extra" "Failed to find user-local packages" t nil)
+;; XXX I wish there was a way to load the _latest_ version of these
+;; override packages, since mine are sure to get out of date
+(atc:add-to-load-path-maybe
+ "~/sys/elisp/extra-pre" "Failed to find user-local override packages"
+ nil nil)
 
-; Load customization files
+;; Load customization files
 (load "atc-basic")
 (load "atc-programming")
-(load "atc-google")
+(load "atc-google" t)                   ; Non-fatal if missing
 
 ;; ;; M-x customize stuff
 ;; (custom-set-variables
