@@ -9,39 +9,45 @@
 (message "Loading .emacs")
 
 ;; Things to fix
-;; * Flyspell on non-comments
-;; * filladapt but not newline-indents in text-mode
 ;; * Make run-scheme use xscheme from the get-go
 ;; * refill in latex-mode
-;; * Look at file-name-handler-alist to disable ange-ftp
 ;; * Had to do
 ;;   (setq flyspell-generic-check-word-p
 ;;         (function tex-mode-flyspell-verify))
 ;;   in LaTeX mode (it's not setting it automagically)
 ;; * Make it not remember places or save backups in subversion log
 ;;   messages
-;; * Next/prev function in C++
-;; * Brace insertion in C++
-;; * Always auto-hungry in C++
-;; * C++ even for .h files
-;; * Fix else/catch vs auto-hungry thing
+;; * Brace insertion in C++ (look at skeleton.el)
 ;; * newline-and-indent in LaTeX
 ;; * Replace xscheme
 ;; * lua-mode
+;; * gnuclient/emacsclient with a new frame
+;; * Colorize TODO, FIXME, and XXX, as well as style violations
+;; * Try custom-set-variables to make things better behaved
+;; * C-x C-c should be close-dwim (close the current frame unless it's
+;;   the only frame, possibly closing gnuclient as well)
+;; * Standardize keys for comment region and compile
+;;
+;;
+;; Thing I think are fixed, but need more testing
+;; * Flyspell on non-comments
+;; * Fix else/catch vs auto-hungry thing
+;; * auto-fill in c-mode
+;; * ebackup
+;; * grep decolorization (really, there should be a colorizing filter)
 
 ; Set appropriate load-path
-(if (file-accessible-directory-p "~/sys/elisp")
-    (setq load-path (append
-		     '("~/sys/elisp") load-path))
-  (error "Failed to find load path"))
+(if (not (file-accessible-directory-p "~/sys/elisp"))
+    (error "Failed to find load path")
+  (add-to-list 'load-path "~/sys/elisp")
+  (if (not (file-accessible-directory-p "~/sys/elisp/extra"))
+      (message "Failed to find user-local packages")
+    (add-to-list 'load-path "~/sys/elisp/extra")))
 
 ; Load customization files
 (load "atc-basic")
 (load "atc-programming")
-;; (load "atc-progmodes")
-;; (load "atc-c-like")
-;; (load "atc-misc")
-;; (load "atc-utils")
+(load "atc-google")
 
 ;; ;; M-x customize stuff
 ;; (custom-set-variables

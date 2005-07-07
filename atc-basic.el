@@ -39,7 +39,13 @@
 
 (setq load-warn-when-source-newer t
       inhibit-startup-message     t
-      next-line-add-newlines      nil)
+      next-line-add-newlines      nil
+      x-stretch-cursor            t)
+
+;; Place backup files in ~/.emacs-backup
+(if (require 'ebackup nil t)
+    ;; Only keep 5 last backup copies around (the default is 10)
+    (setq ebackup-max-copies 5))
 
 ;;; Set general settings
 ;; aspell rocks.  ispell sucks.  Use aspell if it's available
@@ -51,14 +57,28 @@
 ;; other terminal emulator out there)
 (setenv "TERM" "vt100")
 
+;; Make grep not spit out color codes (this overrides some of the hard
+;; work grep-compute-defaults does to figure out the grep-command, but
+;; shouldn't cause major problems)
+(setq grep-command "grep -n --color=none -e")
+
+;; Ange FTP really slows down filename completion, so disable this
+(let ((new-fnha ())
+      (fnha file-name-handler-alist))
+  (while fnha
+    (when (not (string-match "^ange-.*" (symbol-name (cdar fnha))))
+      (add-to-list 'new-fnha (car fnha)))
+    (setq fnha (cdr fnha)))
+  (setq file-name-handler-alist new-fnha))
+
 ;;; Set global bindings
 (global-set-key "\C-c\g"   (function goto-line))
 (global-set-key "\C-x\C-k" (function kill-buffer))
 (global-set-key "\C-x\C-b" (function electric-buffer-list))
 ;; The following is because some terminals use C-h and some use C-?
 ;; for backspace.  Emacs by default only understands C-?.  I'm sure
-;; one of these is the Right Way and I should even be using Emacs on
-;; terminals that do it the other way.
+;; one of these is the Right Way and I shouldn't even be using Emacs
+;; on terminals that do it the other way.
 (global-set-key "\C-h"     (function delete-backward-char))
 
 ;;; Enable dangerous functions

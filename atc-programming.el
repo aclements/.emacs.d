@@ -64,12 +64,27 @@
     (if (member 'flyspell-full feature-list)
         (add-hook modehook (lambda () (flyspell-mode t))))
     (if (member 'plain-newline feature-list)
-        (add-hook modehook (lambda () (local-set-key "\C-m" 'newline))))
+        (add-hook modehook
+                  (lambda () (local-set-key "\C-m" (function newline)))))
+    (if (member 'c-defun-jump feature-list)
+        (add-hook modehook
+                  (lambda ()
+                    (local-set-key "\M-p" (function c-beginning-of-defun))
+                    (local-set-key "\M-n" (function c-end-of-defun)))))
+    (if (member 'c-auto-hungry feature-list)
+        (add-hook modehook
+                  (lambda () (c-toggle-auto-hungry-state 1))))
     ))
+
+;; C/C++
+(setcdr (assoc "\\.h\\'" auto-mode-alist) (function c++-mode))
+(atc:set-mode-features 'c-mode-common-hook
+                       '(autofill filladapt flyspell
+                                  c-defun-jump c-auto-hungry))
 
 ;; Python
 (atc:autoload-mode 'python-mode "python-mode" "\\.py$" "python")
-(atc:set-mode-features 'python-mode '(filladapt))
+(atc:set-mode-features 'python-mode-hook '(filladapt))
 
 ;; MIT Scheme
 (atc:autoload-mode 'scheme-mode "xscheme" "\\.scm$")
@@ -95,7 +110,6 @@
              '(font-latex-title-1-face
                font-latex-title-2-face
                font-latex-title-3-face))))
-
 
 ;; Lisp
 (atc:set-mode-features '(lisp-mode-hook emacs-lisp-mode-hook)
