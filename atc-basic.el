@@ -53,7 +53,8 @@
 ;;; Set general settings
 ;; aspell rocks.  ispell sucks.  Use aspell if it's available
 (if (executable-find "aspell")
-    (setq ispell-program-name "aspell"))
+    (setq ispell-program-name "aspell")
+  (setq ispell-program-name "ispell"))
 
 ;; The Emacs terminal emulator tends to confuse programs by setting
 ;; TERM to "Emacs".  It's basically a vt100 emulator (just like every

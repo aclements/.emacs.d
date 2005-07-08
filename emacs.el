@@ -11,14 +11,9 @@
 ;; Things to fix
 ;; * Make run-scheme use xscheme from the get-go
 ;; * refill in latex-mode
-;; * Had to do
-;;   (setq flyspell-generic-check-word-p
-;;         (function tex-mode-flyspell-verify))
-;;   in LaTeX mode (it's not setting it automagically)
 ;; * Make it not remember places or save backups in subversion log
 ;;   messages
 ;; * Brace insertion in C++ (look at skeleton.el)
-;; * newline-and-indent in LaTeX
 ;; * Replace xscheme
 ;; * lua-mode
 ;; * gnuclient/emacsclient with a new frame
@@ -36,7 +31,7 @@
 ;; * Fix else/catch vs auto-hungry thing
 ;; * auto-fill in c-mode
 ;; * ebackup
-;; * grep decolorization (really, there should be a colorizing filter)
+;; * newline-and-indent in LaTeX
 
 ;; Set appropriate load-path
 (defun atc:add-to-load-path-maybe (path msg append fatal)

@@ -39,6 +39,17 @@
   (if interpreter
       (add-to-list 'interpreter-mode-alist (cons interpreter modefunc))))
 
+;; ispell.el is beautifully written to make it impossible to
+;; gracefully deal with a missing ispell program since loading ispell
+;; will cause it to fail, but without loading it, you can't find out
+;; what program it's going to try to load
+(defmacro when-ispell-works (&rest forms)
+  `(if (and (boundp 'ispell-program-name)
+            (executable-find ispell-program-name))
+       (progn
+         ,@forms)
+     (message "Warning: ispell not found")))
+
 ;; Set up additional features to enable when entering a mode
 (defun atc:set-mode-features (modehook feature-list)
   (if (listp modehook)
@@ -60,9 +71,11 @@
              (featurep 'filladapt))
         (add-hook modehook (function turn-on-filladapt-mode)))
     (if (member 'flyspell feature-list)
-        (add-hook modehook (function flyspell-prog-mode)))
+        (add-hook modehook (lambda ()
+                             (when-ispell-works (flyspell-prog-mode)))))
     (if (member 'flyspell-full feature-list)
-        (add-hook modehook (lambda () (flyspell-mode t))))
+        (add-hook modehook (lambda ()
+                             (when-ispell-works (flyspell-mode t)))))
     (if (member 'plain-newline feature-list)
         (add-hook modehook
                   (lambda () (local-set-key "\C-m" (function newline)))))
@@ -74,6 +87,23 @@
     (if (member 'c-auto-hungry feature-list)
         (add-hook modehook
                   (lambda () (c-toggle-auto-hungry-state 1))))
+    (if (member 'latex-bindings feature-list)
+        (add-hook modehook
+                  (lambda ()
+                    (local-set-key "\M-q" 'LaTeX-fill-paragraph)
+                    ;; This gets unset by latex-mode
+                    (local-set-key "\C-m" 'newline-and-indent))))
+    (if (member 'latex-faces feature-list)
+        (add-hook modehook
+                  (lambda ()
+                    ;; Make all of the section faces small
+                    (mapcar
+                     (lambda (face)
+                       (face-spec-set face
+                                      '((t (:inherit font-latex-title-4-face)))))
+                     '(font-latex-title-1-face
+                       font-latex-title-2-face
+                       font-latex-title-3-face)))))
     ))
 
 ;; C/C++
@@ -92,24 +122,11 @@
 
 ;; AUCTeX
 (atc:autoload-mode 'latex-mode "tex-site" "\\.tex$")
-(atc:set-mode-features 'LaTeX-mode-hook '(autofill flyspell-full))
-(add-hook 'LaTeX-mode-hook
-          (lambda ()
-            (local-set-key "\M-q" 'LaTeX-fill-paragraph)
-            (local-set-key "\C-m" 'newline-and-indent)
-            ;; XXX Fix flyspell so it checks more than just comments.
-            ;; There's a more fundamental problem here, because this
-            ;; _should_ be set right by flyspell.
-            (setq flyspell-generic-check-word-p
-                  (function tex-mode-flyspell-verify))
-            ;; Make all of the section faces small
-            (mapcar
-             (lambda (face)
-               (face-spec-set face
-                              '((t (:inherit font-latex-title-4-face)))))
-             '(font-latex-title-1-face
-               font-latex-title-2-face
-               font-latex-title-3-face))))
+(atc:set-mode-features 'LaTeX-mode-hook
+                       '(autofill flyspell-full
+                                  latex-bindings latex-faces))
+;; flyspell only knows about tex-mode by default
+(put 'latex-mode 'flyspell-mode-predicate 'tex-mode-flyspell-verify)
 
 ;; Lisp
 (atc:set-mode-features '(lisp-mode-hook emacs-lisp-mode-hook)
