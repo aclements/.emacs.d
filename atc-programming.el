@@ -136,27 +136,72 @@
                         (delete-horizontal-space))))))))
 (add-hook 'c-mode-common-hook
           (lambda ()
-            (defadvice c-electric-brace (after c-auto-close-brace
-                                               last (arg) activate)
-              ;; Only do automagic close braces if the user typed an
-              ;; open brace and point is not in a literal
-              (when (and (eq last-command-char ?{)
-                         (not (c-in-literal)))
-                (save-excursion
-                  (newline)
-                  ;; Type the close brace
-                  (let ((last-command-char ?})
-                        ;; Inhibit cleanup of empty defuns
-                        (c-cleanup-list
-                         (remq 'empty-defun-braces c-cleanup-list)))
-                    (c-electric-brace arg))
-                  ;; Clean up extra whitespace that may have been
-                  ;; inserted after the close brace 
-                  (let ((end (point))
-                        (begin (save-excursion
-                                 (skip-chars-backward " \t\n")
-                                 (point))))
-                    (delete-region begin end)))))
+            (defadvice c-electric-brace (around c-auto-close-brace
+                                                last (arg) activate)
+              (if (or (not c-auto-newline)
+                      (not (eq last-command-char ?{))
+                      (c-in-literal))
+                  ;; Don't do anything special if not in auto mode, if
+                  ;; the user typed anything other than an open brace,
+                  ;; or if the point is in a literal
+                  ad-do-it
+                (let ((syntax-type
+                       (or (save-excursion
+                             (c-backward-syntactic-ws)
+                             (backward-char)
+                             (cond ((looking-at "=") 'assignment)
+                                   ((looking-at ",") 'list)
+                                   ((or (looking-at ")")
+                                        (looking-at ";")) 'block)
+                                   (t nil)))
+                           (save-excursion
+                             ;; Enum or struct?
+                             ;; XXX This is probably quite incorrect
+                             (c-backward-token-1)
+                             (if (or (looking-at "struct\\>")
+                                     (looking-at "enum\\>"))
+                                 'definition
+                               ;; Try one token further back in case
+                               ;; it was a named struct
+                               (c-backward-token-1)
+                               (if (or (looking-at "struct\\>")
+                                       (looking-at "enum\\>"))
+                                   'definition
+                                 nil)))
+                           (save-excursion
+                             ;; Class?
+                             (c-beginning-of-statement-1)
+                             (if (looking-at "class\\>")
+                                 'definition
+                               nil))
+                           (progn
+                             (message "c-auto-close-brace is confused")
+                             'block))))
+                  ad-do-it
+                  (save-excursion
+                    (newline)
+                    ;; Type the close brace
+                    (let ((last-command-char ?})
+                          ;; Inhibit cleanup of empty defuns
+                          (c-cleanup-list
+                           (remq 'empty-defun-braces c-cleanup-list)))
+                      (c-electric-brace arg)
+                      ;; Insert any additional characters dictated by
+                      ;; the syntactic context
+                      (cond ((or (eq syntax-type 'assignment)
+                                 (eq syntax-type 'definition))
+                             (let ((last-command-char ?\;))
+                               (c-electric-semi&comma arg)))
+                            ((eq syntax-type 'list)
+                             (let ((last-command-char ?,))
+                               (c-electric-semi&comma arg)))))
+                    ;; Clean up extra whitespace that may have been
+                    ;; inserted after the close characters
+                    (let ((end (point))
+                          (begin (save-excursion
+                                   (skip-chars-backward " \t\n")
+                                   (point))))
+                      (delete-region begin end))))))
             ))
                 
 
