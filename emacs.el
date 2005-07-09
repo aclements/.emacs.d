@@ -13,7 +13,6 @@
 ;; * refill in latex-mode
 ;; * Make it not remember places or save backups in subversion log
 ;;   messages
-;; * Brace insertion in C++ (look at skeleton.el)
 ;; * Replace xscheme
 ;; * lua-mode
 ;; * gnuclient/emacsclient with a new frame
@@ -33,6 +32,7 @@
 ;; * auto-fill in c-mode
 ;; * ebackup
 ;; * newline-and-indent in LaTeX
+;; * Brace insertion in C++ (look at skeleton.el)
 
 ;; Set appropriate load-path
 (defun atc:add-to-load-path-maybe (path msg append fatal)
