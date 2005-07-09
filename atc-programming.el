@@ -104,13 +104,61 @@
                      '(font-latex-title-1-face
                        font-latex-title-2-face
                        font-latex-title-3-face)))))
+    (if (member 'c-filladapt feature-list)
+        ;; Append this hook to make sure filladapt is already setup
+        (add-hook modehook (function c-setup-filladapt) t))
     ))
 
 ;; C/C++
 (setcdr (assoc "\\.h\\'" auto-mode-alist) (function c++-mode))
 (atc:set-mode-features 'c-mode-common-hook
                        '(autofill filladapt flyspell
-                                  c-defun-jump c-auto-hungry))
+                                  c-defun-jump c-auto-hungry
+                                  c-filladapt))
+(add-hook 'c-mode-common-hook
+          (lambda ()
+            (defadvice c-electric-brace (around c-auto-brace-space
+                                               first (arg) activate)
+              (if (or (not (eq last-command-char ?{))
+                      (c-in-literal))
+                  ;; Don't do anything special if I'm in a literal or
+                  ;; if the user typed anything other than an open
+                  ;; brace
+                  ad-do-it
+                ;; Go ahead and put a space here
+                (just-one-space)
+                (let ((here (point)))
+                  ad-do-it
+                  ;; Delete any extra space this may have inserted
+                  (save-excursion
+                    (goto-char here)
+                    (if (looking-at "[ \t]*\n")
+                        (delete-horizontal-space))))))))
+(add-hook 'c-mode-common-hook
+          (lambda ()
+            (defadvice c-electric-brace (after c-auto-close-brace
+                                               last (arg) activate)
+              ;; Only do automagic close braces if the user typed an
+              ;; open brace and point is not in a literal
+              (when (and (eq last-command-char ?{)
+                         (not (c-in-literal)))
+                (save-excursion
+                  (newline)
+                  ;; Type the close brace
+                  (let ((last-command-char ?})
+                        ;; Inhibit cleanup of empty defuns
+                        (c-cleanup-list
+                         (remq 'empty-defun-braces c-cleanup-list)))
+                    (c-electric-brace arg))
+                  ;; Clean up extra whitespace that may have been
+                  ;; inserted after the close brace 
+                  (let ((end (point))
+                        (begin (save-excursion
+                                 (skip-chars-backward " \t\n")
+                                 (point))))
+                    (delete-region begin end)))))
+            ))
+                
 
 ;; Python
 (atc:autoload-mode 'python-mode "python-mode" "\\.py$" "python")

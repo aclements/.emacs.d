@@ -24,6 +24,7 @@
 ;; * Standardize keys for comment region and compile
 ;; * Make arrows automatically skip over basic-offset spaces to
 ;;   emulate tab-like motion
+;; * What is abbrev doing on in C++?
 ;;
 ;;
 ;; Thing I think are fixed, but need more testing
