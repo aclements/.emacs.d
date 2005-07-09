@@ -31,8 +31,12 @@
 ;;; Enable usability features
 (mouse-wheel-mode t)
 
-(if (require 'saveplace nil t)
-    (setq-default save-place t))
+(when (require 'saveplace nil t)
+  (setq-default save-place t)
+  (if (= (user-uid) 0)
+      ;; Being root screws with permissions of saveplace's files, so
+      ;; put it somewhere else
+      (setq save-place-file (concat save-place-file "-root"))))
 
 (toggle-uniquify-buffer-names)
 (setq uniquify-buffer-name-style 'forward)
