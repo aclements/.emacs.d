@@ -11,8 +11,6 @@
 ;; Things to fix
 ;; * Make run-scheme use xscheme from the get-go
 ;; * refill in latex-mode
-;; * Make it not remember places or save backups in subversion log
-;;   messages
 ;; * Replace xscheme
 ;; * lua-mode
 ;; * gnuclient/emacsclient with a new frame
@@ -23,7 +21,6 @@
 ;; * Standardize keys for comment region and compile
 ;; * Make arrows automatically skip over basic-offset spaces to
 ;;   emulate tab-like motion
-;; * What is abbrev doing on in C++?
 ;;
 ;;
 ;; Thing I think are fixed, but need more testing

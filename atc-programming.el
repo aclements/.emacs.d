@@ -27,6 +27,9 @@
 ;; Autoindent after a line
 (global-set-key "\C-m" 'newline-and-indent)
 
+;; Self-explanatory
+(add-hook 'after-save-hook 'executable-make-buffer-file-executable-if-script-p)
+
 ;;; Set up individual language modes
 
 (require 'atc-features)
@@ -46,11 +49,13 @@
 (atc:put-mode-features '(lisp-mode-hook emacs-lisp-mode-hook)
                        '(autofill filladapt flyspell))
 
-;; HTML and text
+;; HTML, text, and Subversion log messages
 (atc:put-mode-features '(html-mode-hook text-mode-hook)
                        '(autofill flyspell))
 (atc:put-mode-features 'text-mode-hook
                        '(plain-newline filladapt))
+(atc:autoload-mode 'svn-commit-mode "svn-commit-mode"
+                   "svn-commit\\.tmp\\(\\.[0-9]+\\)?")
 
 ;; Latex (AUCTeX)
 (defmodefeature latex-bindings
