@@ -14,7 +14,7 @@
 ;; * Replace xscheme
 ;; * lua-mode
 ;; * gnuclient/emacsclient with a new frame
-;; * Colorize TODO, FIXME, and XXX, as well as style violations
+;; * Colorize column violations
 ;; * Try custom-set-variables to make things better behaved
 ;; * C-x C-c should be close-dwim (close the current frame unless it's
 ;;   the only frame, possibly closing gnuclient as well)

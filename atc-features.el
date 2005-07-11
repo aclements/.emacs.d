@@ -98,5 +98,15 @@
 
 (defmodefeature plain-newline
   (local-set-key "\C-m" (function newline)))
+(defmodefeature highlight-unhappy
+  (font-lock-add-keywords nil
+                          '(("\\<\\(FIXME\\|TODO\\|XXX\\)\\>"
+                             1 font-lock-warning-face prepend))))
+(defmodefeature final-newline-ask
+  (make-local-variable 'require-final-newline)
+  (setq require-final-newline 1))
+(defmodefeature final-newline-always
+  (make-local-variable 'require-final-newline)
+  (setq require-final-newline t))
 
 (provide 'atc-features)

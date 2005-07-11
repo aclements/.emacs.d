@@ -30,7 +30,7 @@
 ;; * Removes extraneous trailing whitespace when saving
 
 ;; The recommended auto-mode regexp is:
-;; "svn-commit\\.tmp\\(\\.[0-9]+\\)?"
+;; "svn-commit\\(\\.[0-9]+\\)?\\.tmp"
 
 ;;; Code:
 
@@ -82,7 +82,7 @@ ignore block.")
 
   (setq svn-commit-mode t))
 
-(defadvice fill-paragraph (around svn-ignore-lines (arg))
+(defadvice fill-paragraph (around svn-ignore-lines)
   "If in svn-commit-mode, cause paragraph filling to not extend to the
 ignore block.  If the point is in the ignore block, completely ignores
 the fill request."

@@ -28,7 +28,8 @@
 (global-set-key "\C-m" 'newline-and-indent)
 
 ;; Self-explanatory
-(add-hook 'after-save-hook 'executable-make-buffer-file-executable-if-script-p)
+(add-hook 'after-save-hook
+          'executable-make-buffer-file-executable-if-script-p)
 
 ;;; Set up individual language modes
 
@@ -55,7 +56,7 @@
 (atc:put-mode-features 'text-mode-hook
                        '(plain-newline filladapt))
 (atc:autoload-mode 'svn-commit-mode "svn-commit-mode"
-                   "svn-commit\\.tmp\\(\\.[0-9]+\\)?")
+                   "svn-commit\\(\\.[0-9]+\\)?\\.tmp")
 
 ;; Latex (AUCTeX)
 (defmodefeature latex-bindings

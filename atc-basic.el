@@ -31,6 +31,7 @@
 ;;; Enable usability features
 (mouse-wheel-mode t)
 
+;; Save buffer positions between sessions
 (when (require 'saveplace nil t)
   (setq-default save-place t)
   (if (= (user-uid) 0)
@@ -38,21 +39,28 @@
       ;; put it somewhere else
       (setq save-place-file (concat save-place-file "-root"))))
 
+;; Uniquify buffer names by prepending path elements
 (toggle-uniquify-buffer-names)
 (setq uniquify-buffer-name-style 'forward)
 
+;; icomplete improves minibuffer completion usability
+(when (require 'icomplete nil t)
+  (icomplete-mode 1)
+  (setq icomplete-prospects-length 50))
+
+;; Place backup files in ~/.emacs-backup
+(when (require 'ebackup nil t)
+  ;; Only keep 5 last backup copies around (the default is 10)
+  (setq ebackup-max-copies 5))
+
+;; Interpret ANSI color codes in grep output
+(require 'compilation-colorization nil t)
+
+;; Misc usability variables
 (setq load-warn-when-source-newer t
       inhibit-startup-message     t
       next-line-add-newlines      nil
       x-stretch-cursor            t)
-
-;; Place backup files in ~/.emacs-backup
-(if (require 'ebackup nil t)
-    ;; Only keep 5 last backup copies around (the default is 10)
-    (setq ebackup-max-copies 5))
-
-;; Interpret ANSI color codes in grep output
-(require 'compilation-colorization nil t)
 
 ;;; Set general settings
 ;; aspell rocks.  ispell sucks.  Use aspell if it's available
