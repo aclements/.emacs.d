@@ -61,7 +61,7 @@ point.  If no function contains point, return nil."
                        (set-window-start nil
                                          (save-excursion
                                            (goto-char (window-start))
-                                           (forward-line lines)
+                                           (vertical-motion lines)
                                            (point)))))
         (cond ((and value header-line-format)
                ;; Just change the header line
@@ -95,7 +95,7 @@ present by displaying the line that would be there anyways."
            (if (null header-line-format)
                ;; Avoid instabilities by ignoring the line where the
                ;; header line would be if it were present
-               (forward-line))
+               (vertical-motion 1))
            (or (when (= (point) (point-min))
                  c-show-func-top-line-format)
                (let ((func (c-show-func-get-func)))
@@ -103,7 +103,9 @@ present by displaying the line that would be there anyways."
                    (concat c-show-func-function-prefix
                            func)))
                (progn
-                 (forward-line -1)
+                 ;; XXX This doesn't deal with continuation lines
+                 ;; correctly, since it just grabs the whole line
+                 (vertical-motion -1)
                  (when c-show-func-top-level-prefix
                    (concat c-show-func-top-level-prefix
                            (c-show-func-get-line))))))))
