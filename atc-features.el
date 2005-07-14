@@ -89,7 +89,7 @@
        (progn
          ,@forms)
      (message "Warning: ispell not found")))
-(defmodefeature flyspell
+(defmodefeature flyspell-prog
   (when-ispell-works (flyspell-prog-mode)))
 (defmodefeature flyspell-full
   (when-ispell-works (flyspell-mode t)))

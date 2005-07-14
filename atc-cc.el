@@ -83,6 +83,10 @@ point.  If no function contains point, return nil."
     (shrink-window 1)
     (enlarge-window 1)))
 
+;; XXX Whoa.  This goes insane in a lot of cases where point is on the
+;; first line.  Notably, when you're typing something that looks like
+;; a function, or if you have a function introduction on the first
+;; line and you try to move to the first line.
 (defun c-show-func ()
   "Set the header line to something that gives meaningful context
 about whatever structure is currently going off the top of the screen.
@@ -200,6 +204,9 @@ present by displaying the line that would be there anyways."
                          (point))))
             (delete-region begin end)))))))
 
+;; XXX Don't use this feature yet!  It's totally experimental and
+;; doesn't work very well.  It tends to make Emacs do really wacky
+;; things at really unexpected times.
 (defmodefeature c-show-func
   (if (boundp 'header-line-format)
       (run-with-idle-timer c-show-func-delay t
@@ -212,7 +219,8 @@ present by displaying the line that would be there anyways."
 
 ;; Set C's features
 (atc:put-mode-features 'c-mode-common-hook
-                       '(autofill filladapt flyspell highlight-unhappy
+                       '(autofill filladapt flyspell-prog
+                                  highlight-unhappy
                                   final-newline-always
                                   c-defun-jump c-auto-hungry
                                   c-filladapt c-auto-brace-space

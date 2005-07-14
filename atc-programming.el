@@ -44,15 +44,15 @@
 
 ;; MIT Scheme
 (atc:autoload-mode 'scheme-mode "xscheme" "\\.scm$")
-(atc:put-mode-features 'scheme-mode-hook '(autofill flyspell))
+(atc:put-mode-features 'scheme-mode-hook '(autofill flyspell-prog))
 
 ;; Lisp
 (atc:put-mode-features '(lisp-mode-hook emacs-lisp-mode-hook)
-                       '(autofill filladapt flyspell))
+                       '(autofill filladapt flyspell-prog))
 
 ;; HTML, text, and Subversion log messages
 (atc:put-mode-features '(html-mode-hook text-mode-hook)
-                       '(autofill flyspell))
+                       '(autofill flyspell-full))
 (atc:put-mode-features 'text-mode-hook
                        '(plain-newline filladapt))
 (atc:autoload-mode 'svn-commit-mode "svn-commit-mode"
