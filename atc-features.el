@@ -31,6 +31,7 @@
     `(progn
        (defun ,func-name ()
          ,@forms)
+       (assq-delete-all ',name mode-features-alist)
        (add-to-list 'mode-features-alist
                     (cons ',name (function ,func-name))
                     t))))
@@ -57,7 +58,8 @@
     (let ((name (car name-func))
           (func (cdr name-func)))
       (when (memq name feature-list)
-        ;; Always append the hook in order to keep the order right
+        ;; Always append the hook in order to keep the order right (if
+        ;; this feature has already been added, this is a no-op)
         (add-hook modehook func t)
         (setq feature-list (delq name feature-list)))))
   ;; Are there any features in the list that weren't registered
@@ -98,6 +100,12 @@
 
 (defmodefeature plain-newline
   (local-set-key "\C-m" (function newline)))
+(defun sh-newline-and-actually-indent ()
+  (interactive)
+  (sh-newline-and-indent)
+  (indent-according-to-mode))
+(defmodefeature shell-newline
+  (local-set-key "\C-m" (function sh-newline-and-actually-indent)))
 (defmodefeature highlight-unhappy
   (font-lock-add-keywords nil
                           '(("\\<\\(FIXME\\|TODO\\|XXX\\)\\>"

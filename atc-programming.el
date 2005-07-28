@@ -50,6 +50,11 @@
 (atc:put-mode-features '(lisp-mode-hook emacs-lisp-mode-hook)
                        '(autofill filladapt flyspell-prog))
 
+;; Shell
+(atc:put-mode-features 'sh-mode-hook
+                       '(autofill filladapt flyspell-prog
+                                  shell-newline))
+
 ;; HTML, text, and Subversion log messages
 (atc:put-mode-features '(html-mode-hook text-mode-hook)
                        '(autofill flyspell-full))

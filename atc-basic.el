@@ -28,6 +28,26 @@
       frame-title-format             '("%b" " - " invocation-name))
 (global-font-lock-mode t)
 
+;; Move the useful, short, non-static information to earlier in the
+;; mode line to make it more visible
+(setq-default mode-line-format
+      '("-" mode-line-mule-info mode-line-modified
+        mode-line-frame-identification
+        mode-line-buffer-identification
+        "    "
+        (line-number-mode "L%2l ")
+        (column-number-mode "C%2c ")
+        (-3 "%p")
+        " "
+        global-mode-string
+        " %[("
+        (:eval (mode-line-mode-name))
+        mode-line-process
+        minor-mode-alist
+        "%n"
+        ")%]"
+        "-%-"))
+
 ;;; Enable usability features
 (mouse-wheel-mode t)
 
@@ -73,14 +93,13 @@
 ;; other terminal emulator out there)
 (setenv "TERM" "vt100")
 
-;; Ange FTP really slows down filename completion, so disable this
-(let ((new-fnha ())
-      (fnha file-name-handler-alist))
+;; Ange FTP really slows down filename completion, so disable it
+(let ((fnha file-name-handler-alist))
   (while fnha
-    (when (not (string-match "^ange-.*" (symbol-name (cdar fnha))))
-      (add-to-list 'new-fnha (car fnha)))
-    (setq fnha (cdr fnha)))
-  (setq file-name-handler-alist new-fnha))
+    (if (string-match "^ange-.*" (symbol-name (cdar fnha)))
+        (setq file-name-handler-alist
+              (delq (car fnha) file-name-handler-alist)))
+    (setq fnha (cdr fnha))))
 
 ;;; Set global bindings
 (global-set-key "\C-c\g"   (function goto-line))
@@ -94,3 +113,49 @@
 
 ;;; Enable dangerous functions
 (put 'narrow-to-region 'disabled nil)
+
+;;; Set up emacsclient
+(when (require 'server nil t)
+  ;; Rely on the ec script or the user to start the server in the
+  ;; right instance.  This way stray emacs instances don't fight over
+  ;; who gets the server.
+  ;(server-start)
+
+  ;; Always open a new frame.  XXX I'd rather this not open a new
+  ;; frame if the buffer is already open, but this hook doesn't get
+  ;; called until after the server has gone and fiddled with the live
+  ;; frames
+  (add-hook 'server-switch-hook
+            (lambda ()
+              (let ((buffer (current-buffer)))
+                (bury-buffer)
+                (let ((pop-up-windows nil)
+                      (pop-up-frames t))
+                  (pop-to-buffer buffer)))))
+
+  ;; Make kill-buffer just release the client without complaining
+  ;; about it
+  (remove-hook 'kill-buffer-query-functions
+               'server-kill-buffer-query-function))
+
+;;; Improve C-x C-c
+(defun kill-server-or-frame-or-emacs (&optional arg)
+  (interactive "P")
+  (when (featurep 'server)
+    ;; For each window in this frame, if the buffer in that window
+    ;; came from the Emacs server, see if this is the only window
+    ;; containing that buffer and kill it if so
+    (walk-windows (lambda (wnd)
+                    (save-excursion
+                      (let ((buffer (window-buffer wnd)))
+                        (if (and server-buffer-clients
+                                 (null (cdr (get-buffer-window-list buffer))))
+                            (kill-buffer buffer)))))
+                  nil
+                  (selected-frame)))
+  ;; If there are multiple frames, kill just this frame
+  (if (> (length (frame-list)) 1)
+      (delete-frame)
+    ;; Last frame, so kill emacs
+    (save-buffers-kill-emacs arg)))
+(global-set-key "\C-x\C-c" (function kill-server-or-frame-or-emacs))

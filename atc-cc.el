@@ -71,6 +71,11 @@ block."
                    (if (looking-at "\\(class\\|struct\\|enum\\)\\>")
                        'definition
                      nil))
+                 (save-excursion
+                   ;; Do-while?
+                   (c-beginning-of-statement-1)
+                   (if (looking-at "do\\>")
+                       'do-while))
                  (progn
                    (message "c-auto-close-brace is confused")
                    'block))))
@@ -85,13 +90,18 @@ block."
             (c-electric-brace arg)
             ;; Insert any additional characters dictated by the
             ;; syntactic context
+            (if (eq syntax-type 'do-while)
+                (insert " while ()"))
             (cond ((or (eq syntax-type 'assignment)
-                       (eq syntax-type 'definition))
+                       (eq syntax-type 'definition)
+                       (eq syntax-type 'do-while))
+                   ;; Insert semicolon
                    (let ((last-command-char ?\;)
                          (c-cleanup-list (cons 'defun-close-semi
                                                c-cleanup-list)))
                      (c-electric-semi&comma arg)))
                   ((eq syntax-type 'list)
+                   ;; Insert comma
                    (let ((last-command-char ?,)
                          (c-cleanup-list (cons 'list-close-comma
                                                c-cleanup-list)))
@@ -108,6 +118,9 @@ block."
   (when (require 'show-context-mode nil t)
     (show-context-mode 1)))
 
+(defmodefeature c-bindings
+  (local-set-key "\C-c\C-c" (function compile)))
+
 ;;; Set up the mode itself
 
 ;; A lot of .h files are actually C++
@@ -120,4 +133,5 @@ block."
                                   final-newline-always
                                   c-defun-jump c-auto-hungry
                                   c-filladapt c-auto-brace-space
-                                  c-auto-close-brace c-show-func))
+                                  c-auto-close-brace c-show-func
+                                  c-bindings))

@@ -11,4 +11,6 @@
     (when (load "~build/nonconf/google3/tools/tags/gtags.el" t)
       (setq google-decipher-proto-files t)
       (global-set-key "\M-." 'google-find-tag))
+    ;; Set compile command
+    (setq compile-command "make-dbg -r")
     ))
