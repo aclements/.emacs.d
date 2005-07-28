@@ -40,25 +40,25 @@
 
 ;; Python
 (atc:autoload-mode 'python-mode "python-mode" "\\.py$" "python")
-(atc:put-mode-features 'python-mode-hook '(filladapt))
+(atc:add-mode-features 'python-mode-hook '(filladapt))
 
 ;; MIT Scheme
 (atc:autoload-mode 'scheme-mode "xscheme" "\\.scm$")
-(atc:put-mode-features 'scheme-mode-hook '(autofill flyspell-prog))
+(atc:add-mode-features 'scheme-mode-hook '(autofill flyspell-prog))
 
 ;; Lisp
-(atc:put-mode-features '(lisp-mode-hook emacs-lisp-mode-hook)
+(atc:add-mode-features '(lisp-mode-hook emacs-lisp-mode-hook)
                        '(autofill filladapt flyspell-prog))
 
 ;; Shell
-(atc:put-mode-features 'sh-mode-hook
+(atc:add-mode-features 'sh-mode-hook
                        '(autofill filladapt flyspell-prog
                                   shell-newline))
 
 ;; HTML, text, and Subversion log messages
-(atc:put-mode-features '(html-mode-hook text-mode-hook)
+(atc:add-mode-features '(html-mode-hook text-mode-hook)
                        '(autofill flyspell-full))
-(atc:put-mode-features 'text-mode-hook
+(atc:add-mode-features 'text-mode-hook
                        '(plain-newline filladapt))
 (atc:autoload-mode 'svn-commit-mode "svn-commit-mode"
                    "svn-commit\\(\\.[0-9]+\\)?\\.tmp")
@@ -76,7 +76,7 @@
     (face-spec-set face '((t (:inherit font-latex-title-4-face))))))
 
 (atc:autoload-mode 'latex-mode "tex-site" "\\.tex$")
-(atc:put-mode-features 'LaTeX-mode-hook
+(atc:add-mode-features 'LaTeX-mode-hook
                        '(autofill flyspell-full
                                   latex-bindings latex-faces))
 ;; flyspell only knows about tex-mode by default

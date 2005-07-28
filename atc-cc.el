@@ -127,7 +127,7 @@ block."
 (setcdr (assoc "\\.h\\'" auto-mode-alist) (function c++-mode))
 
 ;; Set C's features
-(atc:put-mode-features 'c-mode-common-hook
+(atc:add-mode-features 'c-mode-common-hook
                        '(autofill filladapt flyspell-prog
                                   highlight-unhappy
                                   final-newline-always

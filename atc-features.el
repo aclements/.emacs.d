@@ -42,17 +42,18 @@
 ;; defined, not the order in feature-list (note that I don't like
 ;; elisp enough to make this true across multiple calls to this
 ;; function).  modehook-maybe-plural may either be a single mode hook,
-;; or a list of mode hooks
-(defun atc:put-mode-features (modehook-maybe-plural feature-list)
+;; or a list of mode hooks.  If a feature has already been added to a
+;; modehook, this does not re-add it.
+(defun atc:add-mode-features (modehook-maybe-plural feature-list)
   (if (listp modehook-maybe-plural)
       ;; Iterate over the mode hooks
       (dolist (hook modehook-maybe-plural)
-        (atc:put-one-mode-features hook feature-list))
+        (atc:add-one-mode-feature hook feature-list))
     ;; Just one mode hook
-    (atc:put-one-mode-features modehook-maybe-plural feature-list)))
+    (atc:add-one-mode-feature modehook-maybe-plural feature-list)))
 
-;; Do the real work of atc:put-mode-features for just one modehook
-(defun atc:put-one-mode-features (modehook feature-list)
+;; Do the real work of atc:add-mode-features for just one modehook
+(defun atc:add-one-mode-feature (modehook feature-list)
   ;; Iterate over the available features
   (dolist (name-func mode-features-alist)
     (let ((name (car name-func))
