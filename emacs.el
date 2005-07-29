@@ -13,14 +13,15 @@
 ;; * refill in latex-mode
 ;; * Replace xscheme
 ;; * lua-mode
-;; * gnuclient/emacsclient with a new frame
 ;; * Colorize column violations
 ;; * Try custom-set-variables to make things better behaved
-;; * C-x C-c should be close-dwim (close the current frame unless it's
-;;   the only frame, possibly closing gnuclient as well)
 ;; * Standardize keys for comment region and compile
 ;; * Make arrows automatically skip over basic-offset spaces to
 ;;   emulate tab-like motion
+;; * Make compilation-mode better.  It should be able to scroll the
+;;   output as it appears until the first error appears, then stay
+;;   there.  It should also go away automatically if no errors occur.
+;; * isearch should work in the electric buffer list
 ;;
 ;;
 ;; Thing I think are fixed, but need more testing
@@ -30,6 +31,7 @@
 ;; * ebackup
 ;; * newline-and-indent in LaTeX
 ;; * Brace insertion in C++ (look at skeleton.el)
+;; * gnuclient/emacsclient with a new frame
 
 ;; Set appropriate load-path
 (defun atc:add-to-load-path-maybe (path msg append fatal)

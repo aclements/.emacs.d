@@ -13,4 +13,8 @@
       (global-set-key "\M-." 'google-find-tag))
     ;; Set compile command
     (setq compile-command "make-dbg -r")
+    ;; Load unit testing
+    (when (load (concat "~build/nonconf/google3/experimental"
+                        "/users/damonkohler/run_unit_test.el") t)
+      (global-set-key "\C-x\C-u" 'run-unit-test-for-current-buffer))
     ))

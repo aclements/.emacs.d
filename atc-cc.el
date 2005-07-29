@@ -118,8 +118,10 @@ block."
   (when (require 'show-context-mode nil t)
     (show-context-mode 1)))
 
-(defmodefeature c-bindings
-  (local-set-key "\C-c\C-c" (function compile)))
+(defmodefeature c-compile
+  (local-set-key "\C-c\C-c" (function compile))
+  (setq compilation-window-height 10
+        compilation-scroll-output t))
 
 ;;; Set up the mode itself
 
@@ -134,4 +136,4 @@ block."
                                   c-defun-jump c-auto-hungry
                                   c-filladapt c-auto-brace-space
                                   c-auto-close-brace c-show-func
-                                  c-bindings))
+                                  c-compile))

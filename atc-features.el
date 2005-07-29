@@ -30,6 +30,7 @@
                                    (symbol-name name)))))
     `(progn
        (defun ,func-name ()
+         (interactive)
          ,@forms)
        (assq-delete-all ',name mode-features-alist)
        (add-to-list 'mode-features-alist
