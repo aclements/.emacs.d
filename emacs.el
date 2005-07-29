@@ -52,5 +52,7 @@
 
 ;; Load customization files
 (load "atc-basic")
+(atc:setup-user "Austin Clements" "amdragon@mit.edu")
+(atc:basic-setup-all)
 (load "atc-programming")
 (load "atc-google" t)                   ; Non-fatal if missing
