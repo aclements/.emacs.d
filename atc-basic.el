@@ -140,6 +140,11 @@
 
 ;;; Improve C-x C-c
 (defun kill-server-or-frame-or-emacs (&optional arg)
+  "If there are multiple frames open, close only the current frame.
+If this is the last frame, just do a `save-buffers-kill-emacs'.  This
+has special knowledge of the Emacs server and will attempt to kill
+server-controlled buffers in a way that makes it feel like the frames
+popped up by new connections are independent Emacsen."
   (interactive "P")
   (when (featurep 'server)
     ;; For each window in this frame, if the buffer in that window
@@ -154,8 +159,9 @@
                   nil
                   (selected-frame)))
   ;; If there are multiple frames, kill just this frame
-  (if (> (length (frame-list)) 1)
-      (delete-frame)
-    ;; Last frame, so kill emacs
-    (save-buffers-kill-emacs arg)))
+  (let ((frames (frame-list)))
+    (if (and frames (cdr frames))
+        (delete-frame)
+      ;; Last frame, so kill emacs
+      (save-buffers-kill-emacs arg))))
 (global-set-key "\C-x\C-c" (function kill-server-or-frame-or-emacs))
