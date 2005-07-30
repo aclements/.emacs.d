@@ -45,22 +45,36 @@ present, and this doesn't hurt."
   "Move the useful, short, non-static information to earlier in the
 mode line to make it more visible.  This also removes some of the
 unnecessary whitespace."
+  ;; Different Emacs installations apparently have wildly different
+  ;; mode-line defaults, even if they look basically the same.  In
+  ;; particular, there are many ways of getting the mode list.  This
+  ;; does its best to guess the right thing.
+  (if (not (boundp 'mode-line-modes))
+      (if (fboundp 'mode-line-mode-name)
+          (setq mode-line-modes
+                '(" %[("
+                  (:eval (mode-line-mode-name))
+                  mode-line-process
+                  minor-mode-alist
+                  "%n"
+                  ")%]"))
+        (setq mode-line-modes
+              "Help! atc:setup-mode-line is confused!")))
   (setq-default mode-line-format
                 '("-" mode-line-mule-info mode-line-modified
                   mode-line-frame-identification
                   mode-line-buffer-identification
                   "    "
-                  (line-number-mode "L%2l ")
-                  (column-number-mode "C%2c ")
+                  (line-number-mode
+                   (column-number-mode
+                    "(%2l,%2c) "
+                    "L%2l ")
+                   (column-number-mode
+                    "C%2l "))
                   (-3 "%p")
                   " "
                   global-mode-string
-                  " %[("
-                  (:eval (mode-line-mode-name))
-                  mode-line-process
-                  minor-mode-alist
-                  "%n"
-                  ")%]"
+                  mode-line-modes
                   "-%-")))
 
 ;;; Usability

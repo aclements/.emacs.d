@@ -45,7 +45,12 @@ block."
 ;;; Set up the mode itself
 
 ;; A lot of .h files are actually C++
-(setcdr (assoc "\\.h\\'" auto-mode-alist) (function c++-mode))
+(defun assoc-set-or-add (alist-var key value)
+  (let ((pair (assoc key (symbol-value alist-var))))
+    (if pair
+        (setcdr pair value)
+      (add-to-list alist-var (list key value)))))
+(assoc-set-or-add 'auto-mode-alist "\\.h\\'" (function c++-mode))
 
 ;; Set C's features
 (atc:add-mode-features 'c-mode-common-hook
