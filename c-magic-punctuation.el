@@ -35,7 +35,6 @@
 ;;   automatically inserted, eat it
 ;; * Have the option to put the point in the condition for automatic
 ;;   dangling while
-;; * enbracenify-region on universal argument to open brace
 
 ;;; Customization:
 
@@ -93,14 +92,18 @@ close brace for this set of special syntaxes.
 (define-minor-mode c-magic-punctuation-mode
   "Minor mode that automatically inserts various forms of punctuation
 in C code."
-  nil "{.}"
-  '(("{" . c-magic-brace))
+  nil "{.}" '(("{" . c-magic-open-brace))
 
   ;; Make sure cc-mode is loaded, just in case this is called outside
   ;; a C buffer for some reason
   (require 'cc-mode))
 
 (defun c-magic-punctuation-compute-brace-syntax ()
+  "Computes the syntactic context in which an open brace is being
+inserted.  This is used to determine which danglers to insert.  This
+returns one of assignment, array, block, class, do-while, or
+struct-or-enum."
+
   (or (save-excursion
         (c-backward-syntactic-ws)
         (let ((cb (char-before)))
@@ -129,69 +132,110 @@ in C code."
         'block)))
 
 (defun c-magic-punctuation-insert-danglers (syntax-type)
-  (if (eq syntax-type 'do-while)
-      (insert " while ()"))
-  (cond ((memq syntax-type
-               '(assignment class struct-or-enum do-while))
-         ;; Insert semicolon
-         (let ((last-command-char ?\;)
-               (c-cleanup-list (cons 'defun-close-semi
-                                     c-cleanup-list)))
-           (c-electric-semi&comma arg)))
-        ((eq syntax-type 'array)
-         ;; Insert comma
-         (let ((last-command-char ?,)
-               (c-cleanup-list (cons 'list-close-comma
-                                     c-cleanup-list)))
-           (c-electric-semi&comma arg)))))
+  "Inserts the appropriate danglers for `syntax-type' at point,
+filtered by `c-magic-punctuation-close-brace-danglers'."
 
-(defun c-magic-brace (arg)
+  (let ((real-syntax-type
+         (if (memq syntax-type
+                   c-magic-punctuation-close-brace-danglers)
+             syntax-type
+           'block)))
+    (if (eq real-syntax-type 'do-while)
+        ;; Insert while
+        (insert " while ()"))
+    (cond ((memq real-syntax-type
+                 '(assignment class struct-or-enum do-while))
+           ;; Insert semicolon
+           (let ((last-command-char ?\;)
+                 (c-cleanup-list (cons 'defun-close-semi
+                                       c-cleanup-list)))
+             (c-electric-semi&comma arg)))
+          ((eq real-syntax-type 'array)
+           ;; Insert comma
+           (let ((last-command-char ?,)
+                 (c-cleanup-list (cons 'list-close-comma
+                                       c-cleanup-list)))
+             (c-electric-semi&comma arg))))
+    ;; Clean up extra whitespace that may have been inserted after the
+    ;; close characters
+    (let ((end (point))
+          (begin (save-excursion
+                   (skip-chars-backward " \t\n")
+                   (point))))
+      (delete-region begin end))))
+
+(defun c-magic-open-brace (arg)
+  "Insert a magic open brace, applying
+  `c-magic-punctuation-space-before-open-brace' and
+  `c-magic-punctuation-auto-close-brace'.  With auto close brace
+  insertion, if the mark is transient and active or a universal prefix
+  argument is supplied, this puts braces around the region and
+  re-indents the region."
+
   (interactive "*P")
-  (when c-magic-punctuation-space-before-open-brace
-    ;; Go ahead and put a space here
-    (just-one-space))
-  (let* ((brace-insert-point (point))
+  (let* ((auto-space (and c-magic-punctuation-space-before-open-brace
+                          (not (c-in-literal))))
          (auto-close-brace (and c-magic-punctuation-auto-close-brace
                                 c-auto-newline
                                 (not (c-in-literal))))
-         (syntax-type
-          (when auto-close-brace
-            (if (null c-magic-punctuation-close-brace-danglers)
-                'block
-              (let ((syntax
-                     (c-magic-punctuation-compute-brace-syntax)))
-                (if (memq syntax
-                          c-magic-punctuation-close-brace-danglers)
-                    syntax
-                  'block))))))
-    ;; Insert the brace
-    (let ((last-command-char ?{))
-      (call-interactively (function c-electric-brace)))
-    (when auto-close-brace
-      ;; Insert the closing stuff
-      (save-excursion
-        (newline)
-        ;; Type the close brace
-        (let ((last-command-char ?})
-              ;; Inhibit cleanup of empty defuns
-              (c-cleanup-list
-               (remq 'empty-defun-braces c-cleanup-list)))
-          (call-interactively (function c-electric-brace))
-          ;; Insert any additional characters dictated by the
-          ;; syntactic context
-          (c-magic-punctuation-insert-danglers syntax-type))
-        ;; Clean up extra whitespace that may have been inserted
-        ;; after the close characters
-        (let ((end (point))
-              (begin (save-excursion
-                       (skip-chars-backward " \t\n")
-                       (point))))
-          (delete-region begin end))))
-    (when c-magic-punctuation-space-before-open-brace
-      ;; Delete any extra space that may have been inserted
-      (save-excursion
-        (goto-char brace-insert-point)
-        (if (looking-at "[ \t]*\n")
-            (delete-horizontal-space))))))
+         (embrace (or (consp arg)
+                      (and transient-mark-mode mark-active)))
+         (close-brace-point (if embrace
+                                (set-marker (make-marker)
+                                            (region-end))))
+         return-to-point)
+    (when embrace
+      (goto-char (region-beginning)))
+    (when auto-space
+      ;; Go ahead and ensure there's space here; we'll clean up later
+      (just-one-space))
+    ;; Figure out what's going on around me before I fiddle with it
+    (let ((brace-insert-point (point))
+          (syntax-type
+           (when auto-close-brace
+             (if (null c-magic-punctuation-close-brace-danglers)
+                 ;; Skip the syntax check altogether
+                 'block
+               (c-magic-punctuation-compute-brace-syntax)))))
+      ;; Insert the open brace
+      (let ((last-command-char ?{)
+            (current-prefix-arg nil))
+        (call-interactively (function c-electric-brace)))
+      (when auto-close-brace
+        ;; Insert the closing stuff
+        (let ((begin-body-point (point-marker)))
+          (save-excursion
+            (if (not embrace)
+                ;; Just put a blank line here
+                (newline)
+              ;; First, nuke the extra space inserted after the open
+              ;; brace such that point winds up at the beginning of the
+              ;; line following the open brace
+              (let ((begin (point))
+                    (end (save-excursion
+                           (skip-chars-forward " \t\n")
+                           (point))))
+                (delete-region begin end))
+              ;; Now go to the close brace insertion point
+              (goto-char close-brace-point))
+            ;; Insert the close brace
+            (let ((last-command-char ?})
+                  (current-prefix-arg nil)
+                  ;; Inhibit cleanup of empty defuns
+                  (c-cleanup-list
+                   (remq 'empty-defun-braces c-cleanup-list)))
+              (call-interactively (function c-electric-brace))
+              ;; Re-indent the body if appropriate
+              (when embrace
+                (indent-region begin-body-point (point) nil))
+              ;; Insert any additional characters dictated by the
+              ;; syntactic context and the user-selected danglers
+              (c-magic-punctuation-insert-danglers syntax-type)))))
+      (when auto-space
+        ;; Delete any extra space that may have been inserted
+        (save-excursion
+          (goto-char brace-insert-point)
+          (if (looking-at "[ \t]*\n")
+              (delete-horizontal-space)))))))
 
 (provide 'c-magic-punctuation)
