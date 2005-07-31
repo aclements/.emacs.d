@@ -35,6 +35,7 @@
 ;;   automatically inserted, eat it
 ;; * Have the option to put the point in the condition for automatic
 ;;   dangling while
+;; * enbracenify-region on universal argument to open brace
 
 ;;; Customization:
 
@@ -92,32 +93,14 @@ close brace for this set of special syntaxes.
 (define-minor-mode c-magic-punctuation-mode
   "Minor mode that automatically inserts various forms of punctuation
 in C code."
-  nil "{.}" nil
+  nil "{.}"
+  '(("{" . c-magic-brace))
 
-  ;; Nothing actually needs to be done.  The advice is already in
-  ;; place and keeping an eye on the mode variable.
-  )
+  ;; Make sure cc-mode is loaded, just in case this is called outside
+  ;; a C buffer for some reason
+  (require 'cc-mode))
 
-(defadvice c-electric-brace (around c-space-before-open-brace activate)
-  (if (or (not c-magic-punctuation-mode)
-          (not c-magic-punctuation-space-before-open-brace))
-      ad-do-it
-    (if (or (not (eq last-command-char ?{))
-            (c-in-literal))
-        ;; Don't do anything special if I'm in a literal or if the user
-        ;; typed anything other than an open brace
-        ad-do-it
-      ;; Go ahead and put a space here
-      (just-one-space)
-      (let ((here (point)))
-        ad-do-it
-        ;; Delete any extra space this may have inserted
-        (save-excursion
-          (goto-char here)
-          (if (looking-at "[ \t]*\n")
-              (delete-horizontal-space)))))))
-
-(defun c-magic-punctuation-compute-close-brace-syntax ()
+(defun c-magic-punctuation-compute-brace-syntax ()
   (or (save-excursion
         (c-backward-syntactic-ws)
         (let ((cb (char-before)))
@@ -162,42 +145,53 @@ in C code."
                                      c-cleanup-list)))
            (c-electric-semi&comma arg)))))
 
-(defadvice c-electric-brace (around c-auto-close-brace activate)
-  (if (or (not c-magic-punctuation-mode)
-          (not c-magic-punctuation-auto-close-brace))
-      ad-do-it
-    (if (or (not c-auto-newline)
-            (not (eq last-command-char ?{))
-            (c-in-literal))
-        ;; Don't do anything special if not in auto mode, if the user
-        ;; typed anything other than an open brace, or if the point is
-        ;; in a literal
-        ad-do-it
-      (let ((syntax-type
-             (if (null c-magic-punctuation-close-brace-danglers)
-                 'block
-               (c-magic-punctuation-compute-close-brace-syntax))))
-        (if (not (memq syntax-type
-                       c-magic-punctuation-close-brace-danglers))
-            (setq syntax-type 'block))
-        ad-do-it
-        (save-excursion
-          (newline)
-          ;; Type the close brace
-          (let ((last-command-char ?})
-                ;; Inhibit cleanup of empty defuns
-                (c-cleanup-list
-                 (remq 'empty-defun-braces c-cleanup-list)))
-            (c-electric-brace arg)
-            ;; Insert any additional characters dictated by the
-            ;; syntactic context
-            (c-magic-punctuation-insert-danglers syntax-type))
-          ;; Clean up extra whitespace that may have been inserted
-          ;; after the close characters
-          (let ((end (point))
-                (begin (save-excursion
-                         (skip-chars-backward " \t\n")
-                         (point))))
-            (delete-region begin end)))))))
+(defun c-magic-brace (arg)
+  (interactive "*P")
+  (when c-magic-punctuation-space-before-open-brace
+    ;; Go ahead and put a space here
+    (just-one-space))
+  (let* ((brace-insert-point (point))
+         (auto-close-brace (and c-magic-punctuation-auto-close-brace
+                                c-auto-newline
+                                (not (c-in-literal))))
+         (syntax-type
+          (when auto-close-brace
+            (if (null c-magic-punctuation-close-brace-danglers)
+                'block
+              (let ((syntax
+                     (c-magic-punctuation-compute-brace-syntax)))
+                (if (memq syntax
+                          c-magic-punctuation-close-brace-danglers)
+                    syntax
+                  'block))))))
+    ;; Insert the brace
+    (let ((last-command-char ?{))
+      (call-interactively (function c-electric-brace)))
+    (when auto-close-brace
+      ;; Insert the closing stuff
+      (save-excursion
+        (newline)
+        ;; Type the close brace
+        (let ((last-command-char ?})
+              ;; Inhibit cleanup of empty defuns
+              (c-cleanup-list
+               (remq 'empty-defun-braces c-cleanup-list)))
+          (call-interactively (function c-electric-brace))
+          ;; Insert any additional characters dictated by the
+          ;; syntactic context
+          (c-magic-punctuation-insert-danglers syntax-type))
+        ;; Clean up extra whitespace that may have been inserted
+        ;; after the close characters
+        (let ((end (point))
+              (begin (save-excursion
+                       (skip-chars-backward " \t\n")
+                       (point))))
+          (delete-region begin end))))
+    (when c-magic-punctuation-space-before-open-brace
+      ;; Delete any extra space that may have been inserted
+      (save-excursion
+        (goto-char brace-insert-point)
+        (if (looking-at "[ \t]*\n")
+            (delete-horizontal-space))))))
 
 (provide 'c-magic-punctuation)
