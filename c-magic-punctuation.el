@@ -24,17 +24,19 @@
 ;;; Commentary:
 
 ;; To do
-;; * Document better
 ;; * On open brace or semicolon not in a literal, automatically
 ;;   balance parens (including spacing)
 ;; * Spaces around 'if' conditions: "if ( x )".  Automatically detect
 ;;   if this is the style.  Insert on either open or close paren.
 ;;   This should automatically work with space balancing for
 ;;   auto-balanced parens (above)
+;; * Various other automatic spaces could be inserted.  For example,
+;;   around some operators (=, ==, && ||), before open paren in if,
+;;   for, and while, and after/around semicolon in for
 ;; * If the user types a space immediately after one has been
 ;;   automatically inserted, eat it
-;; * Have the option to put the point in the condition for automatic
-;;   dangling while
+;; * Option for close brace binding to skip forward over the next
+;;   close brace (include any syntactic whitespace)
 
 ;;; Customization:
 
@@ -84,6 +86,18 @@ close brace for this set of special syntaxes.
   blocks."
   :type `(set ,@(mapcar (lambda (d) `(const ,d))
                         c-magic-punctuation-danglers))
+  :group 'c-magic-punctuation)
+
+(defcustom c-magic-punctuation-point-in-do-while 'condition
+  "Where to put point when automatically inserting \"while ();\".
+
+When do-while is present in
+`c-magic-punctuation-close-brace-danglers', this affects where the
+point will be placed after insertion of the dangler.  It can be
+condition, indicating that point should be placed between the
+condition parens, or it can be body, indicating that point should be
+placed between the braces."
+  :type '(radio (const condition) (const body))
   :group 'c-magic-punctuation)
 
 ;;; Code:
@@ -139,10 +153,14 @@ filtered by `c-magic-punctuation-close-brace-danglers'."
          (if (memq syntax-type
                    c-magic-punctuation-close-brace-danglers)
              syntax-type
-           'block)))
-    (if (eq real-syntax-type 'do-while)
-        ;; Insert while
-        (insert " while ()"))
+           'block))
+        return-to-point)
+    (when (eq real-syntax-type 'do-while)
+      ;; Insert while
+      (insert " while (")
+      (if (eq c-magic-punctuation-point-in-do-while 'condition)
+          (setq return-to-point (point-marker)))
+      (insert ")"))
     (cond ((memq real-syntax-type
                  '(assignment class struct-or-enum do-while))
            ;; Insert semicolon
@@ -162,7 +180,46 @@ filtered by `c-magic-punctuation-close-brace-danglers'."
           (begin (save-excursion
                    (skip-chars-backward " \t\n")
                    (point))))
-      (delete-region begin end))))
+      (delete-region begin end))
+    ;; Return the return-to point
+    return-to-point))
+
+(unless (fboundp 'string-reverse)
+  (defun string-reverse (s)
+    (let ((l (string-to-list s)))
+      (if (null l)
+          ""
+        (apply 'string (reverse l))))))
+
+(defun c-magic-close-parens ()
+  ;; XXX Don't do this on semicolon in a for
+  ;; XXX This is a work-in-progress
+  (interactive)
+  (unless (c-in-literal)
+    (let ((state (c-parse-state))
+          (bos (save-excursion
+                 (c-beginning-of-statement)
+                 (point)))
+          (cur-point (point)))
+      (dolist (paren-point state)
+        (message "%s" paren-point)
+        (let ((whitespace
+               (and (not (consp paren-point))
+                    (> paren-point bos)
+                    (save-excursion
+                      (goto-char paren-point)
+                      (when (looking-at "(")
+                        ;; I'd like to accumulate syntactic ws, but
+                        ;; that's not going to happen
+                        (forward-char)
+                        (string-reverse
+                         (buffer-substring
+                          (point)
+                          (save-excursion
+                            (skip-chars-forward " \t\n" cur-point)
+                            (point)))))))))
+          (when whitespace
+            (insert whitespace ")")))))))
 
 (defun c-magic-open-brace (arg)
   "Insert a magic open brace, applying
@@ -230,12 +287,17 @@ filtered by `c-magic-punctuation-close-brace-danglers'."
                 (indent-region begin-body-point (point) nil))
               ;; Insert any additional characters dictated by the
               ;; syntactic context and the user-selected danglers
-              (c-magic-punctuation-insert-danglers syntax-type)))))
+              (let ((rtp (c-magic-punctuation-insert-danglers
+                          syntax-type)))
+                (setq return-to-point (or return-to-point rtp)))))))
       (when auto-space
         ;; Delete any extra space that may have been inserted
         (save-excursion
           (goto-char brace-insert-point)
           (if (looking-at "[ \t]*\n")
-              (delete-horizontal-space)))))))
+              (delete-horizontal-space)))))
+    ;; Move to the return-to-point if one is set
+    (when return-to-point
+      (goto-char return-to-point))))
 
 (provide 'c-magic-punctuation)
