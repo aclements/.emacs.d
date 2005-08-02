@@ -24,8 +24,6 @@
 ;;; Commentary:
 
 ;; To do
-;; * On open brace or semicolon not in a literal, automatically
-;;   balance parens (including spacing)
 ;; * Spaces around 'if' conditions: "if ( x )".  Automatically detect
 ;;   if this is the style.  Insert on either open or close paren.
 ;;   This should automatically work with space balancing for
@@ -36,7 +34,8 @@
 ;; * If the user types a space immediately after one has been
 ;;   automatically inserted, eat it
 ;; * Option for close brace binding to skip forward over the next
-;;   close brace (include any syntactic whitespace)
+;;   close brace (include any syntactic whitespace).  Re-indent the
+;;   close brace as we pass over it.
 
 ;;; Customization:
 
@@ -100,13 +99,34 @@ placed between the braces."
   :type '(radio (const condition) (const body))
   :group 'c-magic-punctuation)
 
+(defcustom c-magic-punctuation-auto-close-parens t
+  "Automatically insert closing parens.
+
+When the user types an open brace or a semicolon (except in some
+situations), this will automatically insert closing parens and
+inter-paren whitespace to balance any unbalanced open parens in the
+current statement."
+  :type 'boolean
+  :group 'c-magic-punctuation)
+
+(defcustom c-magic-punctuation-enable-funky-close-paren-logic t
+  "Enables the use of complex logic when inserting close parens.
+
+C has nasty syntax.  If this is t, auto-close-parens will attempt to
+be intelligent about determining whether or not it should insert close
+parens.  This logic may be wrong, though.  Set this to nil if you have
+problems and auto-close-parens will fall back on simple logic."
+  :type 'boolean
+  :group 'c-magic-punctuation)
+
 ;;; Code:
 
 (require 'easy-mmode)
 (define-minor-mode c-magic-punctuation-mode
   "Minor mode that automatically inserts various forms of punctuation
 in C code."
-  nil "{.}" '(("{" . c-magic-open-brace))
+  nil "{.}" '(("{" . c-magic-open-brace)
+              (";" . c-magic-semicolon))
 
   ;; Make sure cc-mode is loaded, just in case this is called outside
   ;; a C buffer for some reason
@@ -184,65 +204,104 @@ filtered by `c-magic-punctuation-close-brace-danglers'."
     ;; Return the return-to point
     return-to-point))
 
+(defun c-magic-up-parens (&optional level state)
+  "Move point out to the level'th level of unbalanced open paren that
+doesn't involve passing over any block boundaries.  This is useful in
+conjunction with `c-beginning-of-statement' in order to get around
+confusions that arise from things like semicolons in for conditions.
+If level is omitted, it defaults to 0 (meaning the outer-most
+unbalanced paren).  If the result of `c-parse-state' is handy, pass it
+in as the option parameter state, otherwise omit it and it will be
+computed."
+
+  (interactive)
+  (let ((state (if (null state)
+                   (c-parse-state)
+                 state))
+        points)
+    (catch 'done
+      (dolist (paren-point state)
+        (let ((open-point (if (consp paren-point)
+                              (cadr paren-point)
+                            paren-point)))
+          (if (/= (char-after open-point) ?\()
+              (throw 'done nil))
+          (setq points (cons open-point points)))))
+    (let ((paren-point (nth (or level 0) points)))
+      (if paren-point
+          (goto-char paren-point)))))
+
 (unless (fboundp 'string-reverse)
   (defun string-reverse (s)
+    "Reverse s"
     (let ((l (string-to-list s)))
       (if (null l)
           ""
         (apply 'string (reverse l))))))
 
 (defun c-magic-close-parens ()
-  ;; XXX Don't do this on semicolon in a for
-  ;; XXX This is a work-in-progress
+  "Automatically insert close parens matching unbalanced open parens
+  in the current statement.  This also automatically inserts balancing
+  whitespace around the closing parens to match the whitespace around
+  the matching open parens.  This is a no-op when point is in a
+  literal or comment."
+
   (interactive)
   (unless (c-in-literal)
-    (let ((state (c-parse-state))
-          (bos (save-excursion
-                 (c-beginning-of-statement)
-                 (point)))
-          (cur-point (point)))
+    (let* ((state (c-parse-state))
+           (bos (save-excursion
+                  (c-magic-up-parens 0 state)
+                  (c-beginning-of-statement-1)
+                  (point)))
+           (cur-point (point)))
       (dolist (paren-point state)
-        (message "%s" paren-point)
-        (let ((whitespace
-               (and (not (consp paren-point))
-                    (> paren-point bos)
-                    (save-excursion
-                      (goto-char paren-point)
-                      (when (looking-at "(")
-                        ;; I'd like to accumulate syntactic ws, but
-                        ;; that's not going to happen
-                        (forward-char)
-                        (string-reverse
-                         (buffer-substring
-                          (point)
-                          (save-excursion
-                            (skip-chars-forward " \t\n" cur-point)
-                            (point)))))))))
-          (when whitespace
-            (insert whitespace ")")))))))
+        ;; Check if this is an unbalanced open paren that's in this
+        ;; statement
+        (if (and (not (consp paren-point))
+                 (> paren-point bos)
+                 (= (char-after paren-point) ?\())
+            ;; Accumulate the whitespace that should be inserted
+            ;; before this paren (the reverse of the whitespace after
+            ;; this paren)
+            (let ((whitespace
+                   ;; I'd like to accumulate syntactic ws, but that's
+                   ;; not going to happen
+                   (string-reverse
+                    (buffer-substring
+                     (+ paren-point 1)
+                     (save-excursion
+                       (goto-char (+ paren-point 1))
+                       (skip-chars-forward " \t\n" cur-point)
+                       (point))))))
+              (insert whitespace ")")))))))
 
 (defun c-magic-open-brace (arg)
   "Insert a magic open brace, applying
-  `c-magic-punctuation-space-before-open-brace' and
+  `c-magic-punctuation-auto-close-parens',
+  `c-magic-punctuation-space-before-open-brace', and
   `c-magic-punctuation-auto-close-brace'.  With auto close brace
   insertion, if the mark is transient and active or a universal prefix
   argument is supplied, this puts braces around the region and
   re-indents the region."
 
   (interactive "*P")
-  (let* ((auto-space (and c-magic-punctuation-space-before-open-brace
+  (let* ((auto-close-parens c-magic-punctuation-auto-close-parens)
+         (auto-space (and c-magic-punctuation-space-before-open-brace
                           (not (c-in-literal))))
          (auto-close-brace (and c-magic-punctuation-auto-close-brace
                                 c-auto-newline
                                 (not (c-in-literal))))
-         (embrace (or (consp arg)
-                      (and transient-mark-mode mark-active)))
+         (embrace (and (or (consp arg)
+                           (and transient-mark-mode mark-active))
+                       auto-close-brace))
          (close-brace-point (if embrace
                                 (set-marker (make-marker)
                                             (region-end))))
          return-to-point)
     (when embrace
       (goto-char (region-beginning)))
+    (when auto-close-parens
+      (c-magic-close-parens))
     (when auto-space
       ;; Go ahead and ensure there's space here; we'll clean up later
       (just-one-space))
@@ -256,7 +315,13 @@ filtered by `c-magic-punctuation-close-brace-danglers'."
                (c-magic-punctuation-compute-brace-syntax)))))
       ;; Insert the open brace
       (let ((last-command-char ?{)
-            (current-prefix-arg nil))
+            (current-prefix-arg
+             (if auto-close-brace
+                 ;; Prefix arg is given a different meaning with
+                 ;; auto-close-brace
+                 nil
+               ;; Don't screw with brace behavior if asked not to
+               current-prefix-arg)))
         (call-interactively (function c-electric-brace)))
       (when auto-close-brace
         ;; Insert the closing stuff
@@ -299,5 +364,62 @@ filtered by `c-magic-punctuation-close-brace-danglers'."
     ;; Move to the return-to-point if one is set
     (when return-to-point
       (goto-char return-to-point))))
+
+(defun c-magic-semicolon ()
+  "If `c-magic-punctuation-auto-close-parens', automatically close
+  parens before inserting the semicolon if appropriate."
+
+  (interactive)
+  (when c-magic-punctuation-auto-close-parens
+    ;; Check if I should put close parens.  Technically this ambiguous
+    ;; for most flow control statements, since semi-colons are allowed
+    ;; in the condition, but only crazy people do that.  This is
+    ;; designed for common cases.
+    (if (save-excursion
+          (let ((cond-end (point))
+                (cond-begin (progn (c-magic-up-parens)
+                                   (point))))
+            (c-beginning-of-statement-1)
+            ;; Am I in a for statement?
+            (if (looking-at "for\\>")
+                (when c-magic-punctuation-enable-funky-close-paren-logic
+                  ;; Check that point is preceded by two significant
+                  ;; semicolons.  Yes, this is screwy.  No, I'm not
+                  ;; sure it's right.
+                  (goto-char cond-end)
+                  ;; c-beginning-of-statement-1 won't cross unbalanced
+                  ;; parens (but don't back out of the for)
+                  (c-magic-up-parens 1)
+                  ;; Get to the beginning of the increment clause,
+                  ;; being weary of a null statement (which would
+                  ;; cause c-beginning-of-statement-1 to skip to the
+                  ;; beginning of the loop condition clause)
+                  (c-backward-syntactic-ws)
+                  (if (/= (char-before) ?\;)
+                      (c-beginning-of-statement-1))
+                  ;; Make sure there's a semicolon here (this is the
+                  ;; first significant semicolon)
+                  (c-backward-syntactic-ws)
+                  (when (= (char-before) ?\;)
+                    ;; Skip backwards, first backing up over the
+                    ;; semicolon because c-beginning-of-statement-1
+                    ;; won't move if there's a preceding null
+                    ;; statement with an open paren before it (ie, if
+                    ;; the initial condition clause is null)
+                    (backward-char)
+                    ;; Of course, now that we've backed up over the
+                    ;; semicolon, if we're in a null statement,
+                    ;; c-beginning-of-statement-1 will move us back
+                    ;; too far
+                    (c-backward-syntactic-ws)
+                    (if (/= (char-before) ?\;)
+                        (c-beginning-of-statement-1))
+                    ;; And make sure there's another semicolon here
+                    ;; (this is the second significant semicolon)
+                    (c-backward-syntactic-ws)
+                    (eq (char-before) ?\;)))
+              t)))
+        (c-magic-close-parens)))
+  (call-interactively (function c-electric-semi&comma)))
 
 (provide 'c-magic-punctuation)
