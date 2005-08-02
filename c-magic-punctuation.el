@@ -27,7 +27,7 @@
 ;; theoretic sense), requiring C programmers to infuse their code with
 ;; punctuation that adds nothing to the meaning of the program, but
 ;; exists to keeps the compiler happy.  `c-magic-punctuation-mode' is
-;; an attempt to re-infuse C coding with life and creativity by
+;; an attempt to bring life and creativity back to C coding by
 ;; reducing the amount of mechanical work the programmer needs to put
 ;; into satisfying the tedious constraints of C's low bit-rate syntax.
 
@@ -47,15 +47,15 @@
 ;;   If you have `transient-mark-mode' enabled or hit '\C-u' before
 ;;   the open brace, it can put the braces around the region,
 ;;   automatically re-indenting and placing your cursor at the
-;;   beginning of the first line of the body.
-;;
+;;   beginning of the first line of the block.
+
 ;; * It can automatically insert close parens.  This is triggered by
 ;;   either '{' or ';' (under the right circumstances).  Either of
 ;;   these will automatically balance remaining unbalanced open
 ;;   parens, including matching up the spacing between the parens.  It
 ;;   can analyze the syntax to figure out when it is appropriate to do
 ;;   this (try typing 'for (' followed by three semicolons).
-;;
+
 ;; * Most of the features have fine-grained customization controls.
 ;;   Try M-x customize-group<RET>c-magic-punctuation<RET>.
 
@@ -138,6 +138,16 @@ condition, indicating that point should be placed between the
 condition parens, or it can be body, indicating that point should be
 placed between the braces."
   :type '(radio (const condition) (const body))
+  :group 'c-magic-punctuation)
+
+(defcustom c-magic-punctuation-allow-embrace t
+  "Prefix arg or transient mark puts braces around the region.
+
+If this is enabled, auto-close-brace will put braces around the region
+if the '{' is preceded by a universal argument or transient-mark-mode
+is enabled and the mark is active.  It will automatically re-indent
+the region and place point at the beginning of the first line."
+  :type 'boolean
   :group 'c-magic-punctuation)
 
 (defcustom c-magic-punctuation-auto-close-parens t
@@ -274,7 +284,7 @@ computed."
 
 (unless (fboundp 'string-reverse)
   (defun string-reverse (s)
-    "Reverse s"
+    "Reverse s."
     (let ((l (string-to-list s)))
       (if (null l)
           ""
@@ -282,10 +292,10 @@ computed."
 
 (defun c-magic-close-parens ()
   "Automatically insert close parens matching unbalanced open parens
-  in the current statement.  This also automatically inserts balancing
-  whitespace around the closing parens to match the whitespace around
-  the matching open parens.  This is a no-op when point is in a
-  literal or comment."
+in the current statement.  This also automatically inserts balancing
+whitespace around the closing parens to match the whitespace around
+the matching open parens.  This is a no-op when point is in a literal
+or comment."
 
   (interactive)
   (unless (c-in-literal)
@@ -318,12 +328,12 @@ computed."
 
 (defun c-magic-open-brace (arg)
   "Insert a magic open brace, applying
-  `c-magic-punctuation-auto-close-parens',
-  `c-magic-punctuation-space-before-open-brace', and
-  `c-magic-punctuation-auto-close-brace'.  With auto close brace
-  insertion, if the mark is transient and active or a universal prefix
-  argument is supplied, this puts braces around the region and
-  re-indents the region."
+`c-magic-punctuation-auto-close-parens',
+`c-magic-punctuation-space-before-open-brace', and
+`c-magic-punctuation-auto-close-brace'.  With auto close brace
+insertion, if the mark is transient and active or a universal prefix
+argument is supplied, this puts braces around the region and
+re-indents the region."
 
   (interactive "*P")
   (let* ((auto-close-parens c-magic-punctuation-auto-close-parens)
@@ -332,7 +342,8 @@ computed."
          (auto-close-brace (and c-magic-punctuation-auto-close-brace
                                 c-auto-newline
                                 (not (c-in-literal))))
-         (embrace (and (or (consp arg)
+         (embrace (and c-magic-punctuation-allow-embrace
+                       (or (consp arg)
                            (and transient-mark-mode mark-active))
                        auto-close-brace))
          (close-brace-point (if embrace
@@ -358,8 +369,8 @@ computed."
       (let ((last-command-char ?{)
             (current-prefix-arg
              (if auto-close-brace
-                 ;; Prefix arg is given a different meaning with
-                 ;; auto-close-brace
+                 ;; The prefix arg doesn't interact well with the
+                 ;; close brace insertion
                  nil
                ;; Don't screw with brace behavior if asked not to
                current-prefix-arg)))
@@ -408,7 +419,7 @@ computed."
 
 (defun c-magic-semicolon ()
   "If `c-magic-punctuation-auto-close-parens', automatically close
-  parens before inserting the semicolon if appropriate."
+parens before inserting the semicolon if appropriate."
 
   (interactive)
   (when c-magic-punctuation-auto-close-parens

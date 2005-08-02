@@ -225,5 +225,8 @@ change.  If no top-level block contains point, returns nil."
 
 (put 'c-mode 'show-context-mode-getter
      (function show-context-mode-c-get-context))
+;; c++-mode is not a derived mode
+(put 'c++-mode 'show-context-mode-getter
+     (function show-context-mode-c-get-context))
 
 (provide 'show-context-mode)
