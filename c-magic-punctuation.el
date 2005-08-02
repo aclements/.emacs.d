@@ -23,16 +23,57 @@
 
 ;;; Commentary:
 
-;; To do
+;; C programs have very low information content (in the information
+;; theoretic sense), requiring C programmers to infuse their code with
+;; punctuation that adds nothing to the meaning of the program, but
+;; exists to keeps the compiler happy.  `c-magic-punctuation-mode' is
+;; an attempt to re-infuse C coding with life and creativity by
+;; reducing the amount of mechanical work the programmer needs to put
+;; into satisfying the tedious constraints of C's low bit-rate syntax.
+
+;; Specifically, `c-magic-punctuation-mode' automatically inserts
+;; spaces, braces, parentheses, and more.  `c-magic-punctuation-mode'
+;; goes hand-in-hand with `cc-mode's auto-mode (this must be enabled
+;; for certain features to work), which can automatically insert many
+;; forms of whitespace.  `c-magic-punctuation-mode' adds the
+;; following features:
+
+;; * It can automatically insert brace pairs.  This is triggered by
+;;   hitting '{'.  This can automatically insert the close brace,
+;;   followed by 'danglers' appropriate to the syntax (everything from
+;;   semicolons to 'while ();'), place your cursor in the right place,
+;;   and cleanup whitespace near the braces (such as inserting a space
+;;   to separate the opening brace from a preceding 'if' condition).
+;;   If you have `transient-mark-mode' enabled or hit '\C-u' before
+;;   the open brace, it can put the braces around the region,
+;;   automatically re-indenting and placing your cursor at the
+;;   beginning of the first line of the body.
+;;
+;; * It can automatically insert close parens.  This is triggered by
+;;   either '{' or ';' (under the right circumstances).  Either of
+;;   these will automatically balance remaining unbalanced open
+;;   parens, including matching up the spacing between the parens.  It
+;;   can analyze the syntax to figure out when it is appropriate to do
+;;   this (try typing 'for (' followed by three semicolons).
+;;
+;; * Most of the features have fine-grained customization controls.
+;;   Try M-x customize-group<RET>c-magic-punctuation<RET>.
+
+;; Free yourself from the constraints of low bit-rate syntax!
+
+;;; Todo:
+
 ;; * Spaces around 'if' conditions: "if ( x )".  Automatically detect
 ;;   if this is the style.  Insert on either open or close paren.
 ;;   This should automatically work with space balancing for
-;;   auto-balanced parens (above)
+;;   auto-balanced parens (above).  Similarly for 'for', 'while', and
+;;   'do'.
 ;; * Various other automatic spaces could be inserted.  For example,
 ;;   around some operators (=, ==, && ||), before open paren in if,
 ;;   for, and while, and after/around semicolon in for
 ;; * If the user types a space immediately after one has been
-;;   automatically inserted, eat it
+;;   automatically inserted, eat it (how does one detect if other
+;;   things have happened in the mean time?)
 ;; * Option for close brace binding to skip forward over the next
 ;;   close brace (include any syntactic whitespace).  Re-indent the
 ;;   close brace as we pass over it.
