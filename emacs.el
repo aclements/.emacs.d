@@ -22,6 +22,7 @@
 ;;   output as it appears until the first error appears, then stay
 ;;   there.  It should also go away automatically if no errors occur.
 ;; * isearch should work in the electric buffer list
+;; * magic-buffer-list
 ;;
 ;;
 ;; Thing I think are fixed, but need more testing

@@ -88,11 +88,13 @@ buffer (such as %b to display the buffer name)."
   "Helper routine to get the buffer contents at the line containing
 point.  This will probably go away in the wash when show-context-mode
 implements more interesting parsing."
+
   (buffer-substring (line-beginning-position)
                     (line-end-position)))
 
 (defun show-context-mode-compute-headerline ()
   "Compute the value of the header line."
+
   (save-excursion
     (goto-char (window-start))
     (if (= (point) (point-min))
@@ -145,11 +147,12 @@ there anyways."
     (when (local-variable-p 'show-context-mode-old-hlf)
       (setq header-line-format show-context-mode-old-hlf))))
 
-;;; Getters
+;;; Getters:
 
 (defun show-context-mode-c-scrunch (start end)
   "Scrunch together the code between start and end into a single,
 succinct, newline-less line."
+
   ;; Copy the region into a temporary buffer for acrobatics.
   (let ((source (buffer-substring start end)))
     (with-temp-buffer
@@ -220,7 +223,7 @@ change.  If no top-level block contains point, returns nil."
             (when (< start-point end-point)
               (show-context-mode-c-scrunch start-point end-point))))))))
 
-(put 'c++-mode 'show-context-mode-getter
+(put 'c-mode 'show-context-mode-getter
      (function show-context-mode-c-get-context))
 
 (provide 'show-context-mode)
