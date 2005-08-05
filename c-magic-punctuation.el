@@ -155,8 +155,7 @@ the region and place point at the beginning of the first line."
 
 When the user types an open brace or a semicolon (except in some
 situations), this will automatically insert closing parens and
-inter-paren whitespace to balance any unbalanced open parens in the
-current statement."
+inter-paren whitespace to balance any unbalanced open parens."
   :type 'boolean
   :group 'c-magic-punctuation)
 
@@ -290,26 +289,25 @@ computed."
           ""
         (apply 'string (reverse l))))))
 
-(defun c-magic-close-parens ()
+(defun c-magic-close-parens (&optional depth)
   "Automatically insert close parens matching unbalanced open parens
-in the current statement.  This also automatically inserts balancing
-whitespace around the closing parens to match the whitespace around
-the matching open parens.  This is a no-op when point is in a literal
-or comment."
+up to depth (all the way up if unspecified).  This also automatically
+inserts balancing whitespace around the closing parens to match the
+whitespace around the matching open parens.  This is a no-op when
+point is in a literal or comment."
 
   (interactive)
   (unless (c-in-literal)
     (let* ((state (c-parse-state))
            (bos (save-excursion
-                  (c-magic-up-parens 0 state)
-                  (c-beginning-of-statement-1)
+                  (c-magic-up-parens (or depth 0) state)
                   (point)))
            (cur-point (point)))
       (dolist (paren-point state)
-        ;; Check if this is an unbalanced open paren that's in this
-        ;; statement
+        ;; Check if this is an unbalanced open paren that's not too
+        ;; far back
         (if (and (not (consp paren-point))
-                 (> paren-point bos)
+                 (>= paren-point bos)
                  (= (char-after paren-point) ?\())
             ;; Accumulate the whitespace that should be inserted
             ;; before this paren (the reverse of the whitespace after
@@ -417,61 +415,77 @@ re-indents the region."
     (when return-to-point
       (goto-char return-to-point))))
 
+(defun c-magic-semicolon-close-for-depth ()
+  "Helper routine to `c-magic-semicolon' that determines the
+appropriate paren depth to close the current for statement to.  If
+funky logic has been turned off, this returns nil, indicating to not
+even bother.  Otherwise, the looks at how many clauses there are and
+returns 1 if there aren't enough clauses yet (ie, this must be an
+internal semicolon) or 0 if there are already enough clauses (ie, this
+must close the for itself)."
+
+  ;; Check that point is preceded by two significant semicolons.  Yes,
+  ;; this is screwy.  No, I'm not sure it's right.
+  (if (not c-magic-punctuation-enable-funky-close-paren-logic)
+      ;; Just give up
+      nil
+    (if (progn
+          ;; c-beginning-of-statement-1 won't cross unbalanced parens
+          ;; (but don't back out of the for)
+          (c-magic-up-parens 1)
+          ;; Get to the beginning of the increment clause, being weary
+          ;; of a null statement (which would cause
+          ;; c-beginning-of-statement-1 to skip to the beginning of
+          ;; the loop condition clause)
+          (c-backward-syntactic-ws)
+          (if (/= (char-before) ?\;)
+              (c-beginning-of-statement-1))
+          ;; Make sure there's a semicolon here (this is the first
+          ;; significant semicolon)
+          (c-backward-syntactic-ws)
+          (when (= (char-before) ?\;)
+            ;; Skip backwards, first backing up over the semicolon
+            ;; because c-beginning-of-statement-1 won't move if
+            ;; there's a preceding null statement with an open paren
+            ;; before it (ie, if the initial condition clause is null)
+            (backward-char)
+            ;; Of course, now that we've backed up over the semicolon,
+            ;; if we're in a null statement,
+            ;; c-beginning-of-statement-1 will move us back too far
+            (c-backward-syntactic-ws)
+            (if (/= (char-before) ?\;)
+                (c-beginning-of-statement-1))
+            ;; And make sure there's another semicolon here (this is
+            ;; the second significant semicolon)
+            (c-backward-syntactic-ws)
+            (eq (char-before) ?\;)))
+        ;; This must be a terminating semicolon
+        0
+      ;; There aren't enough, so this must be an internal semicolon
+      1)))
+
 (defun c-magic-semicolon ()
   "If `c-magic-punctuation-auto-close-parens', automatically close
 parens before inserting the semicolon if appropriate."
 
   (interactive)
   (when c-magic-punctuation-auto-close-parens
-    ;; Check if I should put close parens.  Technically this ambiguous
-    ;; for most flow control statements, since semi-colons are allowed
-    ;; in the condition, but only crazy people do that.  This is
-    ;; designed for common cases.
-    (if (save-excursion
-          (let ((cond-end (point))
-                (cond-begin (progn (c-magic-up-parens)
-                                   (point))))
-            (c-beginning-of-statement-1)
-            ;; Am I in a for statement?
-            (if (looking-at "for\\>")
-                (when c-magic-punctuation-enable-funky-close-paren-logic
-                  ;; Check that point is preceded by two significant
-                  ;; semicolons.  Yes, this is screwy.  No, I'm not
-                  ;; sure it's right.
-                  (goto-char cond-end)
-                  ;; c-beginning-of-statement-1 won't cross unbalanced
-                  ;; parens (but don't back out of the for)
-                  (c-magic-up-parens 1)
-                  ;; Get to the beginning of the increment clause,
-                  ;; being weary of a null statement (which would
-                  ;; cause c-beginning-of-statement-1 to skip to the
-                  ;; beginning of the loop condition clause)
-                  (c-backward-syntactic-ws)
-                  (if (/= (char-before) ?\;)
-                      (c-beginning-of-statement-1))
-                  ;; Make sure there's a semicolon here (this is the
-                  ;; first significant semicolon)
-                  (c-backward-syntactic-ws)
-                  (when (= (char-before) ?\;)
-                    ;; Skip backwards, first backing up over the
-                    ;; semicolon because c-beginning-of-statement-1
-                    ;; won't move if there's a preceding null
-                    ;; statement with an open paren before it (ie, if
-                    ;; the initial condition clause is null)
-                    (backward-char)
-                    ;; Of course, now that we've backed up over the
-                    ;; semicolon, if we're in a null statement,
-                    ;; c-beginning-of-statement-1 will move us back
-                    ;; too far
-                    (c-backward-syntactic-ws)
-                    (if (/= (char-before) ?\;)
-                        (c-beginning-of-statement-1))
-                    ;; And make sure there's another semicolon here
-                    ;; (this is the second significant semicolon)
-                    (c-backward-syntactic-ws)
-                    (eq (char-before) ?\;)))
-              t)))
-        (c-magic-close-parens)))
+    ;; Check how I should insert close parens.  Technically this
+    ;; ambiguous for most flow control statements, since semi-colons
+    ;; are allowed in the condition, but only crazy people do that.
+    ;; This is designed for common cases.
+    (let* ((cond-end (point))
+           (depth
+            (save-excursion
+              (c-magic-up-parens)
+              (c-beginning-of-statement-1)
+              ;; Am I in a for statement?
+              (cond ((looking-at "for\\>")
+                     (goto-char cond-end)
+                     (c-magic-semicolon-close-for-depth))
+                    (t 0)))))
+      (if depth
+          (c-magic-close-parens depth))))
   (call-interactively (function c-electric-semi&comma)))
 
 (provide 'c-magic-punctuation)
