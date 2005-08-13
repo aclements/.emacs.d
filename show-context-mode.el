@@ -5,7 +5,7 @@
 ;; Authors:    Austin Clements (amdragon@mit.edu)
 ;; Maintainer: Austin Clements (amdragon@mit.edu)
 ;; Created:    18-Jul-2005
-;; Version:    0.1
+;; Version:    0.2
 
 ;; This program is free software; you can redistribute it and/or modify it under
 ;; the terms of the GNU General Public License as published by the Free Software
@@ -33,9 +33,10 @@
 ;; summarizes everything you need to know, but otherwise can't see, to
 ;; understand the context of the visible buffer.
 
-;; Current show-context mode vaguely understands C/C++ code.  It's
-;; designed to be extensible to be able to compute context for any
-;; editing mode.
+;; Currently show-context mode vaguely understands C/C++ code and
+;; understands Python code quite well (both are about in proportion to
+;; how screwed-up their syntax is).  It's designed to be easily
+;; extensible to be able to compute context for any editing mode.
 
 ;; The concept for show-context-mode is based on Semantic's stickyfunc
 ;; mode.  Originally, this was just an attempt to do the same thing
@@ -56,70 +57,194 @@
 
 ;; LaTeX mode
 ;; * Scrunch section names
+;; * Perhaps scrunch environments
 
 ;;; Customization:
 
 (defgroup show-context nil
   "Minor mode for displaying context in the header line")
 
-(defcustom show-context-mode-context-prefix ""
-  "String to prefix the header line with when displaying context."
+(defcustom show-context-mode-context-prefix nil
+  "Header line prefix when displaying context
+
+When there is context to be displayed in the header line, this will be
+prepended to it.  This should be in the same format as
+`header-line-format', except that it assigns special meaning to a
+value of t.  In its simplest form, this can be just a prefix string.
+The default value of nil left-aligns the context line.  A value of t
+is equivalent to 'show-context-mode-left-margin, which will
+automatically align the header line contents with the buffer
+contents."
   :group 'show-context)
 
-(defcustom show-context-mode-top-level-prefix "  "
-  "String to prefix the header line with when displaying the regular
-line (ie, if there is no context)."
+(defcustom show-context-mode-top-level-prefix t
+  "Header line prefix when displaying a regular line
+
+When there is no context to be displayed (ie, the line at the top of
+the window is at the top-level of the file), this will be prepended to
+the buffer text from the line at the top of the window and displayed
+in the header line.  This should be in the same format as
+`header-line-format', except that it assigns special meaning to a
+value of t.  In its simplest form, this can just be a prefix string.
+A value of t (the default value) is equivalent to
+'show-context-mode-left-margin, which will automatically align the
+header line contents with the buffer contents."
   :group 'show-context)
 
 (defcustom show-context-mode-top-line-format "%b"
-  "Header line format to display when already at the top of the
-buffer (such as %b to display the buffer name)."
+  "Header line format when at the top of the buffer
+
+When the window is already at the top of the buffer, there's nothing
+to reasonably display in the header line.  This string specifies the
+header line format in this circumstance (see `header-line-format').
+The default value of \"%b\" displays the buffer name."
+  :type 'string
   :group 'show-context)
 
 ;;; Code:
 
-(defvar show-context-mode-old-hlf nil)
+(defvar show-context-mode-old-hlf nil
+  "The old value of `header-line-format' to return to if
+show-context-mode is disabled")
 (make-variable-buffer-local 'show-context-mode-old-hlf)
 
-(defvar show-context-mode-getter nil)
+(defvar show-context-mode-getter nil
+  "The context getter function for the buffer")
 (make-variable-buffer-local 'show-context-mode-getter)
 
-(defun show-context-mode-get-line ()
-  "Helper routine to get the buffer contents at the line containing
-point.  This will probably go away in the wash when show-context-mode
-implements more interesting parsing."
+(defvar show-context-mode-cache nil
+  "The context cache.  nil if nothing is cached, otherwise a list of
+the value of (window-start) and the context string for that window
+start position.  When the window start position doesn't change,
+there's no need to recompute the context.")
+(make-variable-buffer-local 'show-context-mode-cache)
 
-  (buffer-substring (line-beginning-position)
-                    (line-end-position)))
+(defvar show-context-mode-left-margin nil
+  "A string suitable for placement at the beginning of
+header-line-format that should align it with the left column of the
+current buffer.  This is computed by
+`show-context-mode-get-left-edge-space'.")
+(make-variable-buffer-local 'show-context-mode-left-margin)
+
+(defun show-context-mode-get-visible-line ()
+  "Helper routine to get the buffer contents of the visible line
+containing point."
+
+  (let ((here (point))
+        (eol (line-end-position)))
+    (save-excursion
+      (beginning-of-line)
+      (catch 'done-whilling
+        (while t
+          (let ((last-beginning (point)))
+            (vertical-motion 1)
+            (when (or (> (point) here) (eobp))
+              (throw 'done-whilling
+                     (buffer-substring last-beginning
+                                       (min (point) eol)))))
+          (if (> (point) eol)
+              (error
+               "Bug in show-context-mode-get-visible-line")))))))
 
 (defun show-context-mode-compute-headerline ()
   "Compute the value of the header line."
 
-  (save-excursion
-    (goto-char (window-start))
-    (if (= (point) (point-min))
-        ;; The top is already at the top
-        show-context-mode-top-line-format
-      ;; Figure out what my context is
-      (vertical-motion -1)
-      (or (when show-context-mode-getter
-            (let ((context (funcall show-context-mode-getter)))
-              (when context
-                (list show-context-mode-context-prefix
-                      context))))
-          (progn
-            ;; XXX This doesn't deal with continuation lines correctly,
-            ;; since it just grabs the whole line
-            (list show-context-mode-top-level-prefix
-                  (show-context-mode-get-line)))))))
+  (if (and show-context-mode-cache
+           (= (car show-context-mode-cache) (window-start)))
+      ;; The header line is cached
+      (cadr show-context-mode-cache)
+    (let* (;; Canonicalize the prefixes (t has special meaning)
+           (context-prefix
+            (if (eq show-context-mode-context-prefix t)
+                'show-context-mode-left-margin
+              show-context-mode-context-prefix))
+           (top-level-prefix
+            (if (eq show-context-mode-top-level-prefix t)
+                'show-context-mode-left-margin
+              show-context-mode-top-level-prefix))
+           ;; Compute the header line
+           (header-line
+            (save-excursion
+              (goto-char (window-start))
+              (if (= (point) (point-min))
+                  ;; The top is already at the top
+                  show-context-mode-top-line-format
+                ;; Figure out what my context is
+                (or (when show-context-mode-getter
+                      (let ((context
+                             (condition-case err
+                                 (save-excursion
+                                   (funcall show-context-mode-getter))
+                               (error
+                                (format "Context error (%s)"
+                                        (error-message-string err))))))
+                        (when context
+                          `((t ,context-prefix) ,context))))
+                    (progn
+                      ;; No context.  Fake the line that should be
+                      ;; under the header-line
+                      (vertical-motion -1)
+                      (let ((line
+                             (show-context-mode-get-visible-line)))
+                        `((t ,top-level-prefix) ,line))))))))
+      ;; Cache the result (XXX This can thrash with multiple windows
+      ;; displaying the same buffer, but probably isn't noticeable
+      ;; anyways)
+      (setq show-context-mode-cache
+            (list (window-start) header-line))
+      header-line)))
+
+(defun show-context-mode-get-left-edge-width ()
+  "Computes the width of the left edge of the buffer as a factor of
+the character width.  This includes, for example, the left fringe and
+left vertical scroll bar.  On windowed displays, this can return
+fractional numbers.  This is surprisingly hard to do, so if the
+computation fails, this will return nil."
+
+  ;; This is wonky
+  (let ((x 0)
+        (window (frame-selected-window))
+        ;; Disable the header line so it doesn't get in the way
+        header-line-format width)
+    (catch 'done-scanning
+      (while t
+        ;; Convert frame coordinates to window region/coordinates
+        (let ((coord (coordinates-in-window-p (cons x 0) window)))
+          (cond ((null coord)
+                 ;; Must have gone off the window.  Give up
+                 (throw 'done-scanning nil))
+                ((consp coord)
+                 ;; Found the offset of a point in the buffer
+                 (throw 'done-scanning (- x (car coord))))
+                (t
+                 ;; In a special region.  Move over another
+                 (setq x (1+ x)))))))))
+
+(defun show-context-mode-get-left-edge-space ()
+  "Returns a string suitable for prefixing in the header line that
+should align the rest of the header with the left column of the
+current buffer.  This attempts to deal even with the bizarre
+characteristics of windowed displays that can cause this string to be
+of non-integral character width.  If this function can't figure out
+what's going on, it returns nil."
+
+  (let ((left-edge-width (show-context-mode-get-left-edge-width)))
+    (if left-edge-width
+        (if (= (truncate left-edge-width) left-edge-width)
+            ;; Whole number of spaces.  This special case is
+            ;; particularly useful for tty displays, where space
+            ;; display properties are ignored.
+            (make-string (truncate left-edge-width) ? )
+          ;; Fractional spaces
+          (propertize " " 'display `(space :width ,left-edge-width)))
+      nil)))
 
 (require 'easy-mmode)
 (define-minor-mode show-context-mode
-  "Minor mode that sets the header line to something that gives
-meaningful context about whatever structure is currently going off the
-top of the screen.  If there's no such structure, this emulates the
-header line not being present by displaying the line that would be
-there anyways."
+  "Minor mode that sets the header line to give meaningful context
+about whatever structure is currently going off the top of the screen.
+If there's no such structure, this emulates the header line not being
+present by displaying the line that would be there anyways."
   nil "" nil
 
   (if show-context-mode
@@ -132,6 +257,9 @@ there anyways."
             (setq getter (get mode 'show-context-mode-getter))
             (setq mode (get mode 'derived-mode-parent)))
           (setq show-context-mode-getter getter))
+        ;; Get the left margin space
+        (setq show-context-mode-left-margin
+              (show-context-mode-get-left-edge-space))
         ;; Setup the header line
         (kill-local-variable 'show-context-mode-old-hlf)
         (when (local-variable-p 'header-line-format)
@@ -147,30 +275,95 @@ there anyways."
     (when (local-variable-p 'show-context-mode-old-hlf)
       (setq header-line-format show-context-mode-old-hlf))))
 
+(defun show-context-mode-scrunch (start end &optional nuke-comments)
+  "Scrunch together the code between start and end into a single,
+succinct, newline-less string.  If nuke-comments is true, this will
+attempt to use the buffer's comment syntax to also strip comments."
+
+  ;; Copy the region into a temporary buffer for acrobatics
+  (let ((source (buffer-substring start end))
+        (syntax-table (syntax-table)))
+    (with-temp-buffer
+      (with-syntax-table syntax-table
+        (insert source)
+        (goto-char (point-min))
+        ;; Nuke beginning whitespace
+        (delete-horizontal-space)
+        ;; Scrunch as long as there are newlines
+        (catch 'done-scrunching
+          (let ((parse-point (point-min))
+                (parse-state nil)
+                (parse-sexp-ignore-comments nil)
+                (iterations 0))
+            (while t
+              (when (> iterations 50)
+                ;; Bail, just in case
+                (error "show-context-mode-scrunch is probably stuck"))
+              (setq iterations (1+ iterations))
+              ;; Scrunch one line
+              (end-of-line)
+              ;; Nuke comments
+              (let ((nuked-comment
+                     (when nuke-comments
+                       (save-excursion
+                         (let ((s (parse-partial-sexp parse-point
+                                                      (point)
+                                                      nil
+                                                      nil
+                                                      parse-state)))
+                           ;; Am I in a comment?
+                           (if (not (nth 4 s))
+                               (progn
+                                 ;; Not in a comment.  Record the
+                                 ;; parse state so I don't have to
+                                 ;; start over next time (don't do
+                                 ;; this if we remove a comment or the
+                                 ;; change will confuse the parser)
+                                 (setq parse-point (point))
+                                 (setq parse-state s)
+                                 ;; No, we did not nuke a comment
+                                 nil)
+                             ;; Go to the beginning of the comment
+                             (goto-char (nth 8 s))
+                             ;; Nuke until close comment syntax
+                             (delete-region (point)
+                                            (progn
+                                              (forward-comment 1)
+                                              (point)))
+                             ;; Yes, we did nuke a comment
+                             t))))))
+                ;; Am I done scrunching?
+                (when (and (not (and nuke-comments nuked-comment))
+                           (not (looking-at "\n")))
+                  (throw 'done-scrunching nil))
+                ;; Nuke any newlines and scrunch any whitespace down
+                ;; to one space.
+                (delete-region (point)
+                               (progn (skip-chars-forward "\n")
+                                      (point)))
+                (just-one-space)))))
+        ;; Nuke trailing whitespace
+        (delete-trailing-whitespace)
+        ;; Gather up result
+        (buffer-substring (point-min) (point-max))))))
+
 ;;; Getters:
 
-(defun show-context-mode-c-scrunch (start end)
-  "Scrunch together the code between start and end into a single,
-succinct, newline-less line."
+;; cc-mode
 
-  ;; Copy the region into a temporary buffer for acrobatics.
-  (let ((source (buffer-substring start end)))
-    (with-temp-buffer
-      (insert source)
-      (goto-char (point-min))
-      (catch 'done-scrunching
-        (while t
-          (end-of-line)
-          ;; Am I done scrunching?
-          (unless (looking-at "\n")
-            (throw 'done-scrunching nil))
-          ;; Nuke any newlines and scrunch any whitespace down to one
-          ;; space.
-          (delete-region (point)
-                         (progn (skip-chars-forward "\n")
-                                (point)))
-          (just-one-space)))
-      (buffer-substring (point-min) (point-max)))))
+(defgroup show-context-c nil
+  "Options affecting the computation of context in cc-mode buffers"
+  :group 'show-context)
+
+(defcustom show-context-mode-c-finagle-level 'strip-comments
+  "How hard to finagle C context into a more compact form.
+
+If none, show-context-mode will simply gather up enclosing context
+lines.  If strip-comments, show-context-mode will gather enclosing
+context but remove comments."
+  :type '(radio (const none)
+                (const strip-comments))
+  :group 'show-context-c)
 
 (defun show-context-mode-c-get-context ()
   "In C code, return a string that represents the current context for
@@ -178,24 +371,33 @@ point.  Specifically, this returns the first line of the statement
 that begins the top-level block containing point, though this might
 change.  If no top-level block contains point, returns nil."
 
-  (let ((parse-from-point
-         ;; Point might be in the middle of the statement that
-         ;; introduces the current block, in which case tracing braces
-         ;; backwards from point is going to miss it.  Move point
-         ;; forward a bit if this is the case.
-         (or (save-excursion
-               (c-end-of-statement)
-               (c-forward-syntactic-ws)
-               (if (looking-at "{")
-                   (+ (point) 1)))
-             (point)))
+  (let ((strip-comments (eq show-context-mode-c-finagle-level
+                            'strip-comments))
+        (parse-from-point
+         (or
+          ;; Point might be in the middle of the statement that
+          ;; introduces the current block, in which case tracing
+          ;; braces backwards from point is going to miss it.  Move
+          ;; point forward a bit if this is the case.
+          (save-excursion
+            (c-end-of-statement)
+            (c-forward-syntactic-ws)
+            (if (looking-at "{")
+                ;; Put point inside the brace
+                (+ (point) 1)))
+          ;; However!  The above will miss the enclosing statement if
+          ;; point is (syntactically) right on the open brace
+          (save-excursion
+            (c-forward-syntactic-ws)
+            (if (looking-at "{")
+                ;; Put point inside the brace
+                (+ (point) 1)))
+          (point)))
         (max-end-point
          ;; Since we don't want it displaying stuff that we can
          ;; actually see, compute the maximum end point for the
          ;; scrunch.
-         (save-excursion
-           (vertical-motion 1)
-           (point))))
+         (point)))
     (save-excursion
       (goto-char parse-from-point)
       (let ((state (c-parse-state))
@@ -221,12 +423,135 @@ change.  If no top-level block contains point, returns nil."
                  (min (+ outermost 1) max-end-point)))
             ;; If I still have anything left, gather it up
             (when (< start-point end-point)
-              (show-context-mode-c-scrunch start-point end-point))))))))
+              (show-context-mode-scrunch
+               start-point
+               end-point
+               strip-comments))))))))
 
 (put 'c-mode 'show-context-mode-getter
-     (function show-context-mode-c-get-context))
+     #'show-context-mode-c-get-context)
 ;; c++-mode is not a derived mode
 (put 'c++-mode 'show-context-mode-getter
-     (function show-context-mode-c-get-context))
+     #'show-context-mode-c-get-context)
+
+;; python-mode
+
+(defgroup show-context-python nil
+  "Options affecting the computation of context in python-mode buffers"
+  :group 'show-context)
+
+(defcustom show-context-mode-python-finagle-level 'names-and-args
+  "How hard to finagle pythonic context into a more compact form.
+
+If none, show-context-mode will simply find enclosing def and class
+lines and scrunch these into the context line.  If strip-comments,
+show-context-mode will scrunch together def and class lines, but
+remove comments.  If names-and-args, show-context-mode will only
+display the names of defs and classes and the argument lists of defs."
+  :type '(radio (const none)
+                (const strip-comments)
+                (const names-and-args))
+  :group 'show-context-python)
+
+(defun show-context-mode-python-get-context ()
+  "In Python code, returns a string that represents the current
+context for point.  What's included in this string depends on the
+value of `show-context-mode-python-finagle-level', but it will be
+somehow related to the set of enclosing classes and defs.  If there
+are no enclosing classes or defs, returns nil."
+
+  (let ((strip-comments (memq show-context-mode-python-finagle-level
+                              '(strip-comments names-and-args)))
+        (max-end-point
+         ;; Don't display anything the user can already see
+         (point)))
+    ;; The following sequence is a bit counter-intuitive.  You could
+    ;; just py-goto-statement-at-or-above, but if point is past the
+    ;; last statement in a block, you're not really "in that block"
+    ;; any more.  So, really, you want to start at the indentation
+    ;; level of the statement following the previous line, but,
+    ;; obviously, not that statement itself.
+    (forward-line -1)
+    (if (py-goto-statement-below)
+        (if (not (zerop (current-indentation)))
+            (py-goto-block-up t))
+      ;; We're already past the last statement in the buffer.  Skip
+      ;; forward again to simulate going to the next statement.
+      ;; Ultimately, this will lead to returning nil
+      (forward-line 1))
+    ;; Make sure the above dance actually moved me up.  If it moved me
+    ;; down, then there's no point in showing the user context they
+    ;; already have, so don't display any context.
+    (when (<= (point) max-end-point)
+      ;; Accumulate def's and class's
+      (let ((context-re "^[ \t]*\\(class\\|def\\)\\>")
+            accum)
+        (catch 'done-accumulating
+          (while t
+            (beginning-of-line)
+            (when (looking-at context-re)
+              ;; Suck this statement into accum
+              (let ((context (show-context-mode-scrunch
+                              (point)
+                              (save-excursion
+                                (py-goto-beyond-final-line)
+                                (min max-end-point (point)))
+                              strip-comments)))
+                ;; context may be empty if we hit max-end-point
+                (if (not (zerop (length context)))
+                    (setq accum
+                          (cons (cons (point) context)
+                                accum)))))
+            ;; Have I hit top-level?
+            (if (zerop (current-indentation))
+                (throw 'done-accumulating accum)
+              (py-goto-block-up t))))
+        ;; Turn accum into a real, live context line
+        (cond ((null accum)
+               ;; This can happen when we started out entirely nested in
+               ;; blocks that weren't of interest
+               nil)
+              ((and (= (length accum) 1)
+                    (>= (caar accum)
+                        (save-excursion
+                          (goto-char max-end-point)
+                          (vertical-motion -1)
+                          (point))))
+               ;; Special case when the only context line is where the
+               ;; header line is
+               nil)
+              ((eq show-context-mode-python-finagle-level
+                   'names-and-args)
+               ;; Finagle just names and arguments out of accum
+               (let* ((id-re "[a-zA-Z_]+[a-zA-Z0-9_]*")
+                      (ws-re "[ \t]+")
+                      (class-re (concat "^class" ws-re
+                                        ;; Get the class name
+                                        "\\(" id-re "\\)"))
+                      (def-re (concat "^def" ws-re
+                                      ;; Get the function name and
+                                      ;; argument list
+                                      "\\(" id-re "([^)]*)?\\)"))
+                      (context-line
+                       (mapconcat
+                        (lambda (elt)
+                          (cond ((string-match class-re elt)
+                                 (concat (match-string 1 elt) "."))
+                                ((string-match def-re elt)
+                                 (concat (match-string 1 elt) " "))
+                                (t
+                                 ;; Syntax error?
+                                 (concat elt " "))))
+                        (mapcar #'cdr accum)
+                        "")))
+                 ;; This is a little bogus.  Strip off the last
+                 ;; character, since it's supposed to be a separator
+                 (substring context-line 0 -1)))
+              (t
+               ;; Just join it with spaces and call it good
+               (mapconcat #'cdr accum " ")))))))
+
+(put 'python-mode 'show-context-mode-getter
+     #'show-context-mode-python-get-context)
 
 (provide 'show-context-mode)
