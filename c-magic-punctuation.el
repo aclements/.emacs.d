@@ -6,7 +6,7 @@
 ;; Authors:    Austin Clements (amdragon@mit.edu)
 ;; Maintainer: Austin Clements (amdragon@mit.edu)
 ;; Created:    28-Jul-2005
-;; Version:    0.1
+;; Version:    0.1.1
 
 ;; This program is free software; you can redistribute it and/or modify it under
 ;; the terms of the GNU General Public License as published by the Free Software
@@ -272,7 +272,7 @@ computed."
     (catch 'done
       (dolist (paren-point state)
         (let ((open-point (if (consp paren-point)
-                              (cadr paren-point)
+                              (cdr paren-point)
                             paren-point)))
           (if (/= (char-after open-point) ?\()
               (throw 'done nil))
@@ -298,6 +298,13 @@ point is in a literal or comment."
 
   (interactive)
   (unless (c-in-literal)
+    ;; Delete preceding whitespace, as it can cause inserted
+    ;; whitespace to be unbalanced
+    (delete-region (save-excursion
+                     (skip-chars-backward " \t\n")
+                     (point))
+                   (point))
+    ;; Balance those parens
     (let* ((state (c-parse-state))
            (bos (save-excursion
                   (c-magic-up-parens (or depth 0) state)
