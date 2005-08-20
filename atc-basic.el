@@ -108,6 +108,13 @@ unnecessary whitespace."
   ;; Interpret ANSI color codes in grep output
   (require 'compilation-colorization nil t)
 
+  ;; Setup longlines mode for autoload
+  (when (locate-library "longlines")
+    (autoload 'longlines-mode
+      "longlines"
+      "Minor mode for automatically wrapping long lines." t)
+    (setq longlines-show-hard-newlines t))
+
   ;; Misc usability variables
   (setq load-warn-when-source-newer t
         inhibit-startup-message     t
