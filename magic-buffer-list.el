@@ -1,0 +1,731 @@
+;;; magic-buffer-list.el --- highly interactive buffer list
+
+;; Copyright (C) 2005 Austin Clements
+
+;; Authors:    Austin Clements (amdragon@mit.edu)
+;; Maintainer: Austin Clements (amdragon@mit.edu)
+;; Created:    02-Aug-2005
+;; Version:    0.1
+
+;; This program is free software; you can redistribute it and/or modify it under
+;; the terms of the GNU General Public License as published by the Free Software
+;; Foundation; either version 2 of the License, or any later version.
+;;
+;; This program is distributed in the hope that it will be useful, but WITHOUT
+;; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+;; FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+;; details.
+;;
+;; You should have received a copy of the GNU General Public License along with
+;; this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+;; Place - Suite 330, Boston, MA 02111-1307, USA.
+
+;;; Commentary:
+
+;; * Have a summary, either at the bottom line of the buffer or in the
+;;   mode line (custom mode line format), of the current
+;;   grouping/limiting
+;;
+;; * Have a bunch of functions (including user-defined ones), that,
+;;   given a list of buffers, return an alist associating each buffer
+;;   with a group value and a priority.  Buffers with equal group
+;;   values are grouped together and visibly displayed under that
+;;   label, sorted by their priority.
+;;
+;; * Perhaps the grouping info mechanism should be the same as the
+;;   mechanism that gets information for columns?  The semantics are
+;;   very similar, except that grouping should have way for
+;;   prioritizing the groups and the buffers within each group and
+;;   columns should always return printable information, but groups
+;;   can be over any comparable object.
+;; ** Let information functions specify whether they can be used for
+;;    either or both?  Give reasonable defaults for grouping
+;;    priorities if they are not returned?  Though, if reasonable
+;;    defaults are given, then there's no reason to differentiate the
+;;    interfaces at all.  Perhaps, then, this is just a user
+;;    convenience of "you probably don't want to group by this" (ie,
+;;    you probably don't want to group by buffer size)
+;; ** This brings up another good point.  What about continuous
+;;    things?  It may be useful to group things like size for easier
+;;    navigation, and then sort within the groups by value.  The
+;;    groupings wouldn't be known until all of the values were known
+;;    (though if the info getters are handed all of the buffers at
+;;    once, not just one at a time, the size info getter could do
+;;    this)
+;;
+;; * Ultimately, produce something that looks like
+;;   ((<buffer> (directory :group "/foo"
+;;                         :group-priority 1
+;;                         :value "/foo"
+;;                         :priority 1) ...)
+;;    (...))
+;;   where :group specifies the value to group by, :group-priority
+;;   specifies the priority of the group (the actual priority will be
+;;   the min of the group priorities over the entries in a group),
+;;   :value specifies the value to display in the buffer list (either
+;;   in the column, or at the group header), and :priority specifies
+;;   the priority of this buffer within the buffers with eq :group.
+;;   If :group is omitted, the list cannot be grouped by this
+;;   property.  If :group is not omitted but :group-priority is,
+;;   :group-priority defaults to :priority.  If :value is omitted,
+;;   columns cannot use this property (and group headings will be the
+;;   value of :group).  If :priority is omitted, it defaults to the
+;;   index of this buffer in the buffer ring.
+;;
+;; * Have a function that, given an abstract spec of what the buffer
+;;   list should contain, produces the buffer list buffer.
+;;   Interaction with the buffer list should use the information in
+;;   this specification.
+;;
+;; * Probably transform this into another spec that's just for how to
+;;   render a buffer list.
+;;
+;; * And, of course, allow isearch (perhaps implicitly and put the
+;;   control keys on the control key?)
+;;
+;; Interesting fields
+;; * Buffer major mode
+;; * Directory
+;; * File name sans extension
+;; * Directory and file name sans extension
+;; * Extension
+;; * How recently viewed
+;; * When viewed (ie, group by day)
+;;
+;; * Instead of having this code drive low-level user code, what about
+;;   moving the user code injection point higher?  Provide a
+;;   convenient way for user code to find out information about
+;;   buffers, an easy way to render the buffer list, and a mechanism
+;;   for triggering on certain events.  Thus, it's more like the user
+;;   code is driving the magic buffer list, and deferring to the magic
+;;   buffer list's event loop.
+;; ** Pass the user code either just a list of buffers it should work
+;;    with and provide another function that takes a buffer and the
+;;    name of a property and returns the value of that property (less
+;;    sprawling than having lots of little getters, and easier for the
+;;    user code to support data-drivenness)
+;; ** Pass the user code a list of buffers that already have all sorts
+;;    of available information associated with them.  There's probably
+;;    no advantage to this over the previous approach
+;; ** The user code returns a render spec that includes callback
+;;    information for the event system
+;; *** For related buffer highlighting, this information could either
+;;     be precomputed and placed in the render spec, or the ability
+;;     could be provided as one of the callbacks.
+;; **** But shouldn't related buffer highlighting be orthogonal to the
+;;      method that produces the current rendering?  It's more like a
+;;      way of giving a preview of what another (filtering) view would
+;;      contain
+;; **** Perhaps parameterized filters are the proper way of
+;;      implementing related buffer searching?  The related buffer
+;;      view still needs some view driver to group things together
+;; ** For example, it should be easy to implement something that
+;;    recursively groups buffers by directory components, including
+;;    things like collapsing elements that contain only a single
+;;    subelement into one element, but there's no clear way to do this
+;;    with the purely data-driven model
+;; *** Plus, this is where what magic-buffer-list should be diverges
+;;     from what scary things like ee represent
+;;
+;; * Compute adaptive buffer relatedness by watching how the user
+;;   switches between buffers.  For every ordered pair (A,B) of
+;;   buffers, track the frequency with which the user switches from A
+;;   to B given the chance to switch to B instead of switching from A
+;;   to some buffer other than A or B.  Possibly weight frequency
+;;   affects by recency of switches.
+;; ** The frequency information should be gathered by either a timer
+;;    or a buffer switching hook if there's one built-in.
+;; *** Hmm, does this have odd effects if the user switches
+;;     windows/frames?  Perhaps only in-window switches should be
+;;     considered (watch for current-buffer change without a
+;;     selected-window change)
+;; ** Compute second-order entropy over the buffer sequence (ie,
+;;    first-order over buffer switches) with a time decay, accounting
+;;    for the changing event space (as buffers are created and
+;;    killed).  Use a genetic algorithm to evolve a good one.  Sort
+;;    the buffers by the number of bits of information associated with
+;;    the event of switching from the current buffer to the new
+;;    buffer.
+
+;;; Code:
+
+(defun magic-buffer-list-reload ()
+  (interactive)
+  (unload-feature 'magic-buffer-list)
+  (load-file "~/sys/elisp/magic-buffer-list.el"))
+
+(require 'cl)
+
+(defvar magic-buffer-list-ignore-re "^ ")
+
+(defconst magic-buffer-list-buffer-name " *Magic Buffer List*")
+
+(defun magic-buffer-list ()
+  (interactive)
+  ;; XXX Remember last view type
+  (magic-buffer-list-show-view
+   (car magic-buffer-list-view-sequence)
+   (current-buffer))
+  ;; XXX Do this better
+  (message
+   "RET selects buffer, q buries list, p pivots, TAB jumps to next group"))
+
+;;
+;; Views
+;;
+
+(defvar magic-buffer-list-views
+  `((group-by-major-mode
+     :builder ,#'magic-buffer-list-view-group-by-major-mode
+     :format (" "
+              (25 (concat (repeat indent-level "  ") name) :trim "..")
+              " "
+              (6 size :align right)
+              " "
+              (if modified "*" " ")
+              (if read-only "%" " ")
+              (if visible "V" " ")
+              " "
+              (-39 filename-dimmed :align left :trim ".."
+                   :trim-align right))
+     :group-format (" " (repeat indent-level "  ") title))
+    (group-by-directory
+     :builder ,#'magic-buffer-list-view-group-by-directory
+     :format (" "
+              (25 (concat (repeat indent-level "  ") name) :trim "..")
+              " "
+              (6 size :align right)
+              " "
+              (if modified "*" " ")
+              (if read-only "%" " ")
+              (if visible "V" " ")
+              " "
+              (15 major-mode :trim "..")
+              " "
+              filename-sans-directory)
+     :group-format (" " (repeat indent-level "  ") title))))
+
+(defvar magic-buffer-list-view-sequence
+  '(group-by-major-mode group-by-directory))
+
+(defvar magic-buffer-list-current-view nil)
+(make-variable-buffer-local 'magic-buffer-list-current-view)
+
+(defun magic-buffer-list-view-group-by-major-mode (buffers)
+  (magic-buffer-list-coalesce-groups
+   (mapcar
+    (lambda (buffer)
+      `(group (:title ,(magic-buffer-list-get 'major-mode buffer))
+              (buffer ,buffer)))
+    buffers)))
+
+(defun magic-buffer-list-view-group-by-directory (buffers)
+  (let (directoried nondirectoried)
+    (dolist (buffer buffers)
+      (let ((directory (magic-buffer-list-get 'directory buffer)))
+        (if (null directory)
+            (push buffer nondirectoried)
+          (let* ((dirlist-almost (split-string directory "/"))
+                 (dirlist
+                  (cons (if (equal (substring directory 0 1) "/")
+                            (concat "/" (car dirlist-almost))
+                          (car dirlist-almost))
+                        (cdr dirlist-almost)))
+                 (group `(buffer ,buffer)))
+            (dolist (dir (reverse dirlist))
+              (setq group `(group (:title ,(concat dir "/")) ,group)))
+            (push group directoried)))))
+    (append
+     (magic-buffer-list-swivel-groups
+      (magic-buffer-list-collapse-singleton-groups
+       (magic-buffer-list-coalesce-groups (reverse directoried))
+       "")
+      t)
+     `((group (:title "(no directory)")
+              ,@(mapcar (lambda (buffer) `(buffer ,buffer))
+                        (reverse nondirectoried)))))))
+
+(defun magic-buffer-list-get-buffers ()
+  (remove-if (lambda (buffer)
+               (let ((name (buffer-name buffer)))
+                 (or (string-match magic-buffer-list-ignore-re name)
+                     (string= name magic-buffer-list-buffer-name))))
+             (buffer-list)))
+
+(defun magic-buffer-list-show-view (view-name select-buffer)
+  (let ((view (cdr-safe (assq view-name magic-buffer-list-views))))
+    (if (null view)
+        (error "Unknown view: %s" view-name))
+    (let ((builder (plist-get view :builder))
+          (buffer-format (plist-get view :format))
+          (group-format (plist-get view :group-format))
+          (buffer (get-buffer-create magic-buffer-list-buffer-name)))
+      (save-excursion
+        (set-buffer buffer)
+        (magic-buffer-list-mode)
+        (let* ((buffers (magic-buffer-list-get-buffers))
+               (spec (funcall builder buffers)))
+          (magic-buffer-list-render spec
+                                    buffer-format
+                                    group-format))
+        (setq magic-buffer-list-current-view view-name))
+      (magic-buffer-list-pop-up buffer)
+      (if select-buffer
+          (magic-buffer-list-point-to-buffer select-buffer)
+        (goto-char (point-min))))))
+
+;;
+;; Getters
+;;
+
+;; XXX Rethink this alternate namespace.  It might be better to have a
+;; function naming standard for getters.  If a list of getters is
+;; needed, just scan all symbols.  Though, it somehow has to deal with
+;; places where I currently let the getters.
+(defvar magic-buffer-list-getters
+  `((name . ,#'buffer-name)
+    (filename . ,(lambda (buffer)
+                   (let ((filename (buffer-file-name buffer)))
+                     (when filename
+                       (abbreviate-file-name filename)))))
+    (directory . ,(lambda (buffer)
+                    (let ((filename (magic-buffer-list-get 'filename buffer)))
+                      (if filename
+                          (file-name-directory filename)))))
+    (filename-dimmed . ,(lambda (buffer)
+                          (let ((directory (magic-buffer-list-get
+                                            'directory))
+                                (filename (magic-buffer-list-get
+                                           'filename-sans-directory)))
+                            (if (and directory filename)
+                                (concat (propertize directory
+                                                    'face
+                                                    '((foreground-color
+                                                       . "gray")))
+                                        filename)))))
+    (filename-sans-directory . ,(lambda (buffer)
+                                  (let ((filename
+                                         (magic-buffer-list-get
+                                          'filename buffer)))
+                                    (if filename
+                                        (file-name-nondirectory
+                                         filename)))))
+    (major-mode . ,(lambda (buffer)
+                     (with-current-buffer buffer mode-name)))
+    (size . ,#'buffer-size)
+    (display-time . ,(lambda (buffer)
+                       (with-current-buffer buffer
+                         (if buffer-display-time
+                             (float buffer-display-time)
+                           0))))
+    (modified . ,#'buffer-modified-p)
+    (read-only . ,(lambda (buffer)
+                    (with-current-buffer buffer
+                      buffer-read-only)))
+    (visible . ,(lambda (buffer)
+                  (not (null (get-buffer-window buffer t)))))))
+
+(defun magic-buffer-list-get (property &optional buffer)
+  "Used for column values, and recommended for use by view builders
+for consistency.  In the future, this may employ optimizations such as
+caching."
+  (let ((getter (assq property magic-buffer-list-getters)))
+    (if (null getter)
+        (error "No such property: %s" property)
+      (funcall (cdr getter) (or buffer (current-buffer))))))
+
+;;
+;; Line specs
+;;
+
+(defun magic-buffer-list-format-buffer-row (format-spec buffer
+                                                        indent-level)
+  (let ((magic-buffer-list-getters
+         (cons `(indent-level . ,(lambda (buffer) indent-level))
+               (cons `(indent . ,(lambda (buffer)
+                                   (make-string indent-level ? )))
+                     magic-buffer-list-getters))))
+    (with-current-buffer buffer
+      (magic-buffer-list-format-internal
+       (cons 'concat format-spec)))))
+
+(defun magic-buffer-list-format-group-row (format-spec group-plist
+                                                       indent-level)
+  (let ((magic-buffer-list-getters
+         `((indent-level . ,(lambda (buffer) indent-level))
+           (indent . ,(lambda (buffer) (make-string indent-level ? )))
+           (title . ,(lambda (buffer) (plist-get group-plist
+                                                 :title))))))
+    (magic-buffer-list-format-internal
+     (cons 'concat format-spec))))
+
+(defun magic-buffer-list-string-repeat (string repeat)
+  (mapconcat #'identity (make-list repeat string) ""))
+
+(defun magic-buffer-list-string-pack (string width
+                                             align trim trim-align
+                                             padding)
+  (when (not (memq align '(left right)))
+    (error "Unknown alignment %s" align))
+  (let ((length (length string)))
+    (cond ((= length width)
+           str)
+          ((< length width)
+           (let ((pad-str (magic-buffer-list-string-repeat
+                           padding
+                           (1+ (/ (- width length)
+                                  (length padding))))))
+             (case align
+               ;; XXX What's the proper way to do this?  The padding
+               ;; should probably align regardless of length (ie, the
+               ;; exact opposite of this)
+               (left (substring (concat str pad-str) 0 width))
+               (right (substring (concat pad-str str) (- width))))))
+          ((> length width)
+           (let ((trim-width (- width (length trim))))
+             (case trim-align
+               (left (concat (substring str 0 trim-width) trim))
+               (right (concat trim
+                              (substring str (- trim-width))))))))))
+
+(defun magic-buffer-list-format-internal (elt)
+  ;; XXX Note that current window matters for some alignment
+  ;; operations
+  (cond ((stringp elt)
+         elt)
+        ((null elt)
+         nil)
+        ((symbolp elt)
+         (let ((value (magic-buffer-list-get elt)))
+           (if value (format "%s" value))))
+        ((numberp (car-safe elt))
+         (let* ((width-spec (car elt))
+                (width (if (minusp width-spec)
+                           (+ (window-width) width-spec)
+                         width-spec))
+                (str (magic-buffer-list-format-internal (cadr elt)))
+                (plist (cddr elt))
+                (align (or (plist-get plist :align) 'left))
+                (trim (or (plist-get plist :trim) ""))
+                (trim-align (or (plist-get plist :trim-align) align))
+                (padding (or (plist-get plist :padding) " ")))
+           (magic-buffer-list-string-pack str width
+                                          align trim trim-align
+                                          padding)))
+        ((eq (car-safe elt) 'concat)
+         (mapconcat #'magic-buffer-list-format-internal
+                    (cdr elt)
+                    ""))
+        ((eq (car-safe elt) 'repeat)
+         (let ((name (cadr elt))
+               (string
+                (magic-buffer-list-format-internal (caddr elt))))
+           (magic-buffer-list-string-repeat
+            string
+            (magic-buffer-list-get name))))
+        ((eq (car-safe elt) 'if)
+         (let ((name (cadr elt))
+               (con (caddr elt))
+               (alt (car-safe (cdddr elt))))
+           (if (magic-buffer-list-get name)
+               (magic-buffer-list-format-internal con)
+             (magic-buffer-list-format-internal alt))))
+        (t (error "Unknown format spec %s" elt))))
+
+;;
+;; Render specs
+;;
+
+(defun magic-buffer-list-render (spec buffer-format group-format)
+  (setq buffer-read-only nil)
+  (erase-buffer)
+  (let ((indent-level 0))
+    (flet ((indent
+            ()
+            (insert (make-string indent-level ? )))
+           (render-component
+            (component)
+            (let ((type (car component)))
+              (cond ((eq type 'group)
+                     (render-group component))
+                    ((eq type 'buffer)
+                     (render-buffer component))
+                    (t (error "Unknown render component %s"
+                              component)))))
+           (render-group
+            (group-spec)
+            (let ((plist (cadr group-spec))
+                  (body (cddr group-spec))
+                  (here (point)))
+              (insert (magic-buffer-list-format-group-row
+                      group-format
+                      plist
+                      indent-level))
+              (newline)
+              ;; XXX Use custom faces
+              (put-text-property here (point)
+                                 'face
+                                 '((background-color . "dim gray")))
+              (magic-buffer-list-put-prop here (point)
+                                          'group plist)
+              (let ((indent-level (1+ indent-level)))
+                (render-spec body))))
+           (render-buffer
+            (buffer-spec)
+            (let ((buffer (cadr buffer-spec))
+                  (here (point)))
+              (insert (magic-buffer-list-format-buffer-row
+                      buffer-format
+                      buffer
+                      indent-level))
+              (newline)
+              (magic-buffer-list-put-prop here (point)
+                                          'buffer buffer)))
+           (render-spec
+            (spec)
+            (dolist (component spec)
+              (render-component component))))
+      (render-spec spec)))
+  ;; Clean up blank lines at the end
+  (delete-region (save-excursion (goto-char (point-max))
+                                 (skip-chars-backward " \n\t")
+                                 (point))
+                 (point-max))
+  (goto-char (point-min))
+  (setq buffer-read-only t))
+
+(defun magic-buffer-list-coalesce-groups (spec &optional non-recursive)
+  (let (result groups)
+    (dolist (elt spec)
+      (cond ((eq (car elt) 'buffer)
+             (push elt result))
+            ((eq (car elt) 'group)
+             (let* ((plist (cadr elt))
+                    (body (cddr elt))
+                    (title (plist-get plist :title))
+                    (group (assoc title groups)))
+               (if group
+                   (nconc (cdr group) body)
+                 (let ((new-group `(group ,plist
+                                          ,@body)))
+                   (push (cons title new-group) groups)
+                   (push new-group result)))))
+            (t (error "Unknown element %s" elt))))
+    (unless non-recursive
+      (dolist (group-pair groups)
+        (let ((group (cdr group-pair)))
+          (setf (cddr group)
+                (magic-buffer-list-coalesce-groups (cddr group)
+                                                   nil)))))
+    (reverse result)))
+
+(defun magic-buffer-list-collapse-singleton-groups (spec separator)
+  (remove-if
+   #'null
+   (mapcar
+    (lambda (elt)
+      (cond ((eq (car elt) 'buffer) elt)
+            ((eq (car elt) 'group)
+             (let* ((plist (cadr elt))
+                    (body (cddr elt))
+                    (new-body
+                     (magic-buffer-list-collapse-singleton-groups
+                      body separator))
+                    (len (length new-body)))
+               (cond ((= len 0) nil)
+                     ((and (= len 1)
+                           (eq (caar new-body) 'group))
+                      (let ((subplist (cadar new-body))
+                            (subbody (cddar new-body)))
+                        `(group (:title ,(concat
+                                          (plist-get plist
+                                                     :title)
+                                          separator
+                                          (plist-get subplist
+                                                     :title)))
+                                ,@subbody)))
+                     (t `(group ,plist ,@new-body)))))
+            (t (error "Unknown element: %S" elt))))
+    spec)))
+
+(defun magic-buffer-list-swivel-groups (spec buffers-before-groups)
+  (let* ((buffers (remove-if-not (lambda (elt)
+                                   (eq (car elt) 'buffer))
+                                 spec))
+         (groups (remove-if-not (lambda (elt)
+                                  (eq (car elt) 'group))
+                                spec))
+         (new-groups
+          (mapcar (lambda (elt)
+                    `(group ,(cadr elt)
+                            ,@(magic-buffer-list-swivel-groups
+                               (cddr elt) buffers-before-groups)))
+                  groups)))
+    (if buffers-before-groups
+        (append buffers new-groups)
+      (append new-groups buffers))))
+
+;;
+;; Frame manipulations
+;;
+
+(defvar magic-buffer-list-pop-up-min-context-lines 3)
+
+(defun magic-buffer-list-pop-up (buffer)
+  (let ((in-buffer (eq (current-buffer) buffer))
+        (prev-window (magic-buffer-list-un-pop-up buffer)))
+    (when (and in-buffer prev-window)
+      (select-window prev-window)))
+  (let ((orig-window (selected-window))
+        (orig-height (window-height))
+        (orig-buffer (current-buffer))
+        (window-split nil)
+        (buffer-point (with-current-buffer buffer (point)))
+        (buffer-lines (save-excursion
+                        (set-buffer buffer)
+                        (1+ (count-lines (point-min) (point-max)))))
+        (goal-lines (save-window-excursion
+                      (split-window nil 5)
+                      (window-height (next-window)))))
+    (if (>= goal-lines buffer-lines)
+        (progn
+          ;; The buffer fits in the split window
+          (split-window nil (+ 5 (- goal-lines buffer-lines)))
+          (select-window (next-window))
+          (setq window-split t))
+      ;; Resize this window to make it fit
+      (enlarge-window (- buffer-lines (window-height))))
+    (switch-to-buffer buffer)
+    (set-window-start (selected-window) 0)
+    (goto-char buffer-point)
+    ;; Save restore state
+    (when (not (boundp 'magic-buffer-list-pop-up-buffer-state))
+      (make-local-variable 'magic-buffer-list-pop-up-buffer-state)
+      (put 'magic-buffer-list-pop-up-buffer-state 'permanent-local t))
+    (setq magic-buffer-list-pop-up-buffer-state
+          (list (selected-window) orig-window orig-height orig-buffer
+                window-split))))
+
+(defun magic-buffer-list-un-pop-up (&optional buffer)
+  (interactive)
+  (let ((state (with-current-buffer (or buffer (current-buffer))
+                 (when (boundp 'magic-buffer-list-pop-up-buffer-state)
+                   (prog1
+                       magic-buffer-list-pop-up-buffer-state
+                     (setq magic-buffer-list-pop-up-buffer-state
+                           nil))))))
+    (when state
+      (let ((buf-window (nth 0 state))
+            (orig-window (nth 1 state))
+            (orig-height (nth 2 state))
+            (orig-buffer (nth 3 state))
+            (window-split (nth 4 state)))
+        (save-selected-window
+          (when (and window-split (window-live-p buf-window))
+            (delete-window buf-window))
+          (when (window-live-p orig-window)
+            (select-window orig-window)
+            (enlarge-window (- orig-height (window-height)))
+            (when (and (not window-split) (buffer-live-p orig-buffer))
+              (switch-to-buffer orig-buffer))
+            orig-window)
+          (or (and (window-live-p orig-window) orig-window)
+              (and (window-live-p buf-window) buf-window)))))))
+
+;;
+;; Overlays
+;;
+
+(defun magic-buffer-list-point-to-buffer (buffer)
+  (goto-char (point-min))
+  (while (not (or (equal (magic-buffer-list-get-prop 'buffer)
+                         buffer)
+                  (eobp)))
+    (forward-line))
+  (if (eobp)
+      (goto-char (point-min))))
+
+(defun magic-buffer-list-get-prop (prop &optional pt)
+  (let ((overlays (overlays-at (or pt (point))))
+        (symbol (intern (concat "magic-buffer-list-"
+                                (symbol-name prop)))))
+    (when overlays
+      ;; XXX Deal with multiple overlays
+      (overlay-get (car overlays) symbol))))
+
+(defun magic-buffer-list-put-prop (start end prop value)
+  ;; XXX Search for existing overlay?
+  (let ((overlay (make-overlay start end))
+        (symbol (intern (concat "magic-buffer-list-"
+                                (symbol-name prop)))))
+    (overlay-put overlay symbol value)))
+
+;;
+;; Major mode and interactive commands
+;;
+
+(defvar magic-buffer-list-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "q"    #'magic-buffer-list-un-pop-up)
+    (define-key map "\C-g" #'magic-buffer-list-un-pop-up)
+    (define-key map "\C-m" #'magic-buffer-list-int-selected-goto)
+    (define-key map "p"    #'magic-buffer-list-int-pivot)
+    (define-key map "\C-i" #'magic-buffer-list-int-next-group)
+    map))
+
+(define-derived-mode magic-buffer-list-mode
+  fundamental-mode "Buffers"
+  "Major mode for magic-buffer-list buffer list buffers."
+  (setq truncate-lines t)
+  )
+(put 'magic-buffer-list-mode 'mode-class 'special)
+
+(defun magic-buffer-list-int-selected-goto ()
+  (interactive)
+  (let ((buffer (magic-buffer-list-get-prop 'buffer)))
+    (if (null buffer)
+        (message "That's not a buffer")
+      (let ((window (magic-buffer-list-un-pop-up)))
+        (when window
+          (select-window window))
+        (switch-to-buffer buffer)))))
+
+(defun magic-buffer-list-int-pivot ()
+  (interactive)
+  (let ((buffer (magic-buffer-list-get-prop 'buffer)))
+    (if (null buffer)
+        ;; XXX Just switch to the next view and reselect the
+        ;; originally selected buffer
+        (message "You can only pivot around a buffer")
+      (let ((next-view
+             (car (or (cdr-safe (memq magic-buffer-list-current-view
+                                      magic-buffer-list-view-sequence))
+                      magic-buffer-list-view-sequence))))
+        (magic-buffer-list-show-view next-view buffer)))))
+
+(defun magic-buffer-list-int-next-group ()
+  (interactive)
+  (let ((here (point)))
+    (beginning-of-line)
+    (flet ((skip-groups
+            ()
+            (while (and (magic-buffer-list-get-prop 'group)
+                        (not (eobp)))
+              (forward-line)))
+           (skip-to-group
+            ()
+            (while (and (null (magic-buffer-list-get-prop 'group))
+                        (not (eobp)))
+              (forward-line)))
+           (skip
+            ()
+            (skip-to-group)
+            (skip-groups)))
+      (skip)
+      (when (eobp)
+        (goto-char (point-min))
+        (skip)
+        (if (eobp)
+            (goto-char here))))))
+
+(provide 'magic-buffer-list)
