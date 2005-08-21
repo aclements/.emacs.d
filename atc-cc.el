@@ -42,6 +42,21 @@ block."
   (setq compilation-window-height 10
         compilation-scroll-output t))
 
+(defmodefeature c-choose-style
+  (let ((filename (buffer-file-name)))
+    (if (or (string-match "/jos/" filename)
+            (string-match "/6.828/" filename))
+        (progn
+          (message "Setting style for 6.828")
+          ;; (c-set-style "gnu")
+          ;;(make-local-variable 'c-basic-offset)
+          (c-set-style "bsd")
+          (make-local-variable 'perl-indent-level)
+          (setq ;;c-basic-offset 8
+                perl-indent-level 8
+                tab-width 8
+                indent-tabs-mode t)))))
+
 ;;; Set up the mode itself
 
 ;; A lot of .h files are actually C++
@@ -59,4 +74,8 @@ block."
                                   final-newline-always c-defun-jump
                                   c-auto-hungry c-filladapt
                                   c-magic-punctuation c-show-func
-                                  c-compile))
+                                  c-compile c-choose-style))
+;; Set Perl "features", for those unhappy times...
+(atc:add-mode-features 'perl-mode-hook
+                       '(flyspell-prog final-newline-always
+                         c-choose-style))
