@@ -146,12 +146,19 @@
 ;;    the buffers by the number of bits of information associated with
 ;;    the event of switching from the current buffer to the new
 ;;    buffer.
+;;
+;; * Preview buffer option.  Show the buffer that would be switched to
+;;   when the selection is changed.  Revert to the original buffer if
+;;   canceled
+;; * Autoselect next buffer option.  When popping up, automatically
+;;   select the next buffer instead of the current buffer.
 
 ;;; Code:
 
 (defun magic-buffer-list-reload ()
   (interactive)
-  (unload-feature 'magic-buffer-list)
+  (if (featurep 'magic-buffer-list)
+      (unload-feature 'magic-buffer-list t))
   (load-file "~/sys/elisp/magic-buffer-list.el"))
 
 (require 'cl)
@@ -162,10 +169,10 @@
 
 (defun magic-buffer-list ()
   (interactive)
-  ;; XXX Remember last view type
   (magic-buffer-list-show-view
-   (car magic-buffer-list-view-sequence)
-   (current-buffer))
+   nil
+   (current-buffer)
+   (car magic-buffer-list-view-sequence))
   ;; XXX Do this better
   (message
    "RET selects buffer, q buries list, p pivots, TAB jumps to next group"))
@@ -174,42 +181,67 @@
 ;; Views
 ;;
 
+(defvar magic-buffer-list-view-basic-flags
+  '(concat
+    (if modified "*" " ")
+    (if read-only "%" " ")
+    (if visible "V" " ")))
+
+(defvar magic-buffer-list-view-basic-info
+  '(concat
+    (25 (concat (repeat indent-level "  ") name) :trim "..")
+    " "
+    (4 size-string :align right)
+    " "
+    (reeval magic-buffer-list-view-basic-flags)))
+
+(defvar magic-buffer-list-view-basic-group
+  '(concat
+    (repeat indent-level "  ")
+    title))
+
 (defvar magic-buffer-list-views
-  `((group-by-major-mode
-     :builder ,#'magic-buffer-list-view-group-by-major-mode
+  `((t
+     :sorter ,#'magic-buffer-list-view-sort-mru
+     :grouper ,#'magic-buffer-list-view-group-by-none
+     :format (" " (reeval magic-buffer-list-view-basic-info))
+     :group-format (" " (reeval magic-buffer-list-view-basic-group)))
+    (group-by-major-mode
+     :grouper ,#'magic-buffer-list-view-group-by-major-mode
      :format (" "
-              (25 (concat (repeat indent-level "  ") name) :trim "..")
-              " "
-              (6 size :align right)
-              " "
-              (if modified "*" " ")
-              (if read-only "%" " ")
-              (if visible "V" " ")
+              (reeval magic-buffer-list-view-basic-info)
               " "
               (-39 filename-dimmed :align left :trim ".."
-                   :trim-align right))
-     :group-format (" " (repeat indent-level "  ") title))
+                   :trim-align right)))
     (group-by-directory
-     :builder ,#'magic-buffer-list-view-group-by-directory
+     :grouper ,#'magic-buffer-list-view-group-by-directory
      :format (" "
-              (25 (concat (repeat indent-level "  ") name) :trim "..")
+              (25 (concat (repeat indent-level "  ")
+                          (if filename
+                              filename-sans-directory
+                            name)))
               " "
-              (6 size :align right)
+              (4 size-string :align right)
               " "
-              (if modified "*" " ")
-              (if read-only "%" " ")
-              (if visible "V" " ")
+              (reeval magic-buffer-list-view-basic-flags)
               " "
               (15 major-mode :trim "..")
               " "
-              filename-sans-directory)
-     :group-format (" " (repeat indent-level "  ") title))))
+              filename-sans-directory))))
 
 (defvar magic-buffer-list-view-sequence
   '(group-by-major-mode group-by-directory))
 
-(defvar magic-buffer-list-current-view nil)
-(make-variable-buffer-local 'magic-buffer-list-current-view)
+(defun magic-buffer-list-view-sort-mru (buffers)
+  buffers)
+
+(defun magic-buffer-list-view-sort-alphabetical (buffers)
+  (sort buffers
+        (lambda (a b)
+          (string< (buffer-name a) (buffer-name b)))))
+
+(defun magic-buffer-list-view-group-by-none (buffers)
+  (mapcar (lambda (buffer) `(buffer ,buffer)) buffers))
 
 (defun magic-buffer-list-view-group-by-major-mode (buffers)
   (magic-buffer-list-coalesce-groups
@@ -252,87 +284,129 @@
                      (string= name magic-buffer-list-buffer-name))))
              (buffer-list)))
 
-(defun magic-buffer-list-show-view (view-name select-buffer)
-  (let ((view (cdr-safe (assq view-name magic-buffer-list-views))))
-    (if (null view)
-        (error "Unknown view: %s" view-name))
-    (let ((builder (plist-get view :builder))
-          (buffer-format (plist-get view :format))
-          (group-format (plist-get view :group-format))
-          (buffer (get-buffer-create magic-buffer-list-buffer-name)))
-      (save-excursion
-        (set-buffer buffer)
-        (magic-buffer-list-mode)
-        (let* ((buffers (magic-buffer-list-get-buffers))
-               (spec (funcall builder buffers)))
-          (magic-buffer-list-render spec
-                                    buffer-format
-                                    group-format))
-        (setq magic-buffer-list-current-view view-name))
-      (magic-buffer-list-pop-up buffer)
-      (if select-buffer
-          (magic-buffer-list-point-to-buffer select-buffer)
-        (goto-char (point-min))))))
+(defun magic-buffer-list-show-view (view-name &optional
+                                              select-buffer
+                                              default-view-name)
+  (let ((buffer (get-buffer-create magic-buffer-list-buffer-name)))
+    (save-excursion
+      (set-buffer buffer)
+      (let* ((view-name (or view-name
+                            (if (boundp
+                                 'magic-buffer-list-current-view)
+                                magic-buffer-list-current-view)
+                            default-view-name))
+             (view
+              (cdr-safe (assq view-name magic-buffer-list-views)))
+             (default-view
+              (cdr-safe (assq t magic-buffer-list-views))))
+        (if (null view)
+            (error "Unknown view: %s" view-name))
+        (flet ((view-get
+                (prop)
+                (if (plist-member view prop)
+                    (plist-get view prop)
+                  (plist-get default-view prop))))
+          (let ((sorter (view-get :sorter))
+                (grouper (view-get :grouper))
+                (buffer-format (view-get :format))
+                (group-format (view-get :group-format)))
+            (magic-buffer-list-mode)
+            (let* ((buffers (magic-buffer-list-get-buffers))
+                   (sorted-buffers (if sorter
+                                       (funcall sorter buffers)
+                                     buffers))
+                   (spec (funcall grouper sorted-buffers)))
+              (magic-buffer-list-render spec
+                                        buffer-format
+                                        group-format))))
+        (make-local-variable 'magic-buffer-list-current-view)
+        (setq magic-buffer-list-current-view view-name)))
+    ;; Now that we're done building the view and have unexcursed, pop
+    ;; up the buffer
+    (magic-buffer-list-pop-up buffer)
+    ;; and select the right buffer in the list
+    (magic-buffer-list-point-to-buffer select-buffer)))
 
 ;;
 ;; Getters
 ;;
 
-;; XXX Rethink this alternate namespace.  It might be better to have a
-;; function naming standard for getters.  If a list of getters is
-;; needed, just scan all symbols.  Though, it somehow has to deal with
-;; places where I currently let the getters.
-(defvar magic-buffer-list-getters
-  `((name . ,#'buffer-name)
-    (filename . ,(lambda (buffer)
-                   (let ((filename (buffer-file-name buffer)))
-                     (when filename
-                       (abbreviate-file-name filename)))))
-    (directory . ,(lambda (buffer)
-                    (let ((filename (magic-buffer-list-get 'filename buffer)))
-                      (if filename
-                          (file-name-directory filename)))))
-    (filename-dimmed . ,(lambda (buffer)
-                          (let ((directory (magic-buffer-list-get
-                                            'directory))
-                                (filename (magic-buffer-list-get
-                                           'filename-sans-directory)))
-                            (if (and directory filename)
-                                (concat (propertize directory
-                                                    'face
-                                                    '((foreground-color
-                                                       . "gray")))
-                                        filename)))))
-    (filename-sans-directory . ,(lambda (buffer)
-                                  (let ((filename
-                                         (magic-buffer-list-get
-                                          'filename buffer)))
-                                    (if filename
-                                        (file-name-nondirectory
-                                         filename)))))
-    (major-mode . ,(lambda (buffer)
-                     (with-current-buffer buffer mode-name)))
-    (size . ,#'buffer-size)
-    (display-time . ,(lambda (buffer)
-                       (with-current-buffer buffer
-                         (if buffer-display-time
-                             (float buffer-display-time)
-                           0))))
-    (modified . ,#'buffer-modified-p)
-    (read-only . ,(lambda (buffer)
-                    (with-current-buffer buffer
-                      buffer-read-only)))
-    (visible . ,(lambda (buffer)
-                  (not (null (get-buffer-window buffer t)))))))
-
 (defun magic-buffer-list-get (property &optional buffer)
   "Used for column values, and recommended for use by view builders
 for consistency.  In the future, this may employ optimizations such as
 caching."
-  (let ((getter (assq property magic-buffer-list-getters)))
-    (if (null getter)
-        (error "No such property: %s" property)
-      (funcall (cdr getter) (or buffer (current-buffer))))))
+  (let ((getter (intern
+                 (concat (symbol-name magic-buffer-list-getter-prefix)
+                         "-"
+                         (symbol-name property)))))
+    (if (functionp getter)
+        (with-current-buffer (or buffer (current-buffer))
+          (funcall getter))
+      (error "No such property: %s" property))))
+
+(defvar magic-buffer-list-getter-prefix 'magic-buffer-list-getter)
+
+(defun magic-buffer-list-getter-name ()
+  (buffer-name))
+(defun magic-buffer-list-getter-filename ()
+  (let ((filename (buffer-file-name buffer)))
+    (when filename (abbreviate-file-name filename))))
+(defun magic-buffer-list-getter-filename-dimmed ()
+  (let ((directory (magic-buffer-list-get 'directory))
+        (filename (magic-buffer-list-get 'filename-sans-directory)))
+    (when (and directory filename)
+      (concat (propertize directory 'face '((:foreground "gray")))
+              filename))))
+(defun magic-buffer-list-getter-directory ()
+  (let ((filename (magic-buffer-list-get 'filename buffer)))
+    (when filename (file-name-directory filename))))
+(defun magic-buffer-list-getter-filename-sans-directory ()
+  (let ((filename (magic-buffer-list-get 'filename buffer)))
+    (when filename (file-name-nondirectory filename))))
+(defun magic-buffer-list-getter-major-mode ()
+  mode-name)
+(defun magic-buffer-list-getter-size ()
+  (buffer-size))
+(defun magic-buffer-list-sizify (size)
+  ;; XXX Yeah, I know Emacs can't represent sizes bigger than 134M
+  (if (and (<= size 9999) nil)
+      (number-to-string size)
+    (let* ((postfixes (list "B" "K" "M" "G" "T" "P"))
+           (last-postfix (car (last postfixes)))
+           (divider 1000.0)
+           (power 0))
+      (catch 'done
+        (dolist (postfix postfixes)
+          (let ((new-size (/ size (expt divider power))))
+            (cond ((and (< new-size 10) (= power 0))
+                   (throw 'done
+                          (concat (number-to-string (floor new-size))
+                                  postfix)))
+                  ((< new-size 10)
+                   (throw 'done
+                          (concat (number-to-string
+                                   (/ (ffloor (* new-size
+                                                        10))
+                                             10))
+                                  postfix)))
+                  ((or (< new-size 1000)
+                       (equal postfix last-postfix))
+                   (throw 'done (concat (number-to-string
+                                         (floor new-size))
+                                        postfix))))
+            (incf power)))))))
+(defun magic-buffer-list-getter-size-string ()
+  (magic-buffer-list-sizify (magic-buffer-list-get 'size)))
+(defun magic-buffer-list-getter-display-time ()
+  (if buffer-display-time
+      (float buffer-display-time)
+    0))
+(defun magic-buffer-list-getter-modified ()
+  (buffer-modified-p))
+(defun magic-buffer-list-getter-read-only ()
+  buffer-read-only)
+(defun magic-buffer-list-getter-visible ()
+  (not (null (get-buffer-window (current-buffer) t))))
 
 ;;
 ;; Line specs
@@ -340,24 +414,24 @@ caching."
 
 (defun magic-buffer-list-format-buffer-row (format-spec buffer
                                                         indent-level)
-  (let ((magic-buffer-list-getters
-         (cons `(indent-level . ,(lambda (buffer) indent-level))
-               (cons `(indent . ,(lambda (buffer)
-                                   (make-string indent-level ? )))
-                     magic-buffer-list-getters))))
+  (flet ((magic-buffer-list-getter-indent-level () indent-level)
+         (magic-buffer-list-getter-indent ()
+            (make-string indent-level ? )))
     (with-current-buffer buffer
       (magic-buffer-list-format-internal
-       (cons 'concat format-spec)))))
+       (cons 'concat format-spec) t))))
 
 (defun magic-buffer-list-format-group-row (format-spec group-plist
                                                        indent-level)
-  (let ((magic-buffer-list-getters
-         `((indent-level . ,(lambda (buffer) indent-level))
-           (indent . ,(lambda (buffer) (make-string indent-level ? )))
-           (title . ,(lambda (buffer) (plist-get group-plist
-                                                 :title))))))
-    (magic-buffer-list-format-internal
-     (cons 'concat format-spec))))
+  (flet ((magic-buffer-list-group-getter-indent-level () indent-level)
+         (magic-buffer-list-group-getter-indent ()
+            (make-string indent-level ? ))
+         (magic-buffer-list-group-getter-title ()
+            (plist-get group-plist :title)))
+    (let ((magic-buffer-list-getter-prefix
+           'magic-buffer-list-group-getter))
+      (magic-buffer-list-format-internal
+       (cons 'concat format-spec) t))))
 
 (defun magic-buffer-list-string-repeat (string repeat)
   (mapconcat #'identity (make-list repeat string) ""))
@@ -367,6 +441,8 @@ caching."
                                              padding)
   (when (not (memq align '(left right)))
     (error "Unknown alignment %s" align))
+  (when (not (memq trim-align '(left right)))
+    (error "Unknown trim alignment %s" trim-align))
   (let ((length (length string)))
     (cond ((= length width)
            str)
@@ -388,7 +464,16 @@ caching."
                (right (concat trim
                               (substring str (- trim-width))))))))))
 
-(defun magic-buffer-list-format-internal (elt)
+(defun magic-buffer-list-format-internal (elt &optional to-string)
+  (let ((data (magic-buffer-list-format-internal-eval elt)))
+    (if to-string
+        (mapconcat
+         (lambda (x) (if x (format "%s" x)))
+         (magic-buffer-list-format-internal-flatten (list data))
+         "")
+      data)))
+
+(defun magic-buffer-list-format-internal-eval (elt)
   ;; XXX Note that current window matters for some alignment
   ;; operations
   (cond ((stringp elt)
@@ -396,14 +481,13 @@ caching."
         ((null elt)
          nil)
         ((symbolp elt)
-         (let ((value (magic-buffer-list-get elt)))
-           (if value (format "%s" value))))
+         (magic-buffer-list-get elt))
         ((numberp (car-safe elt))
          (let* ((width-spec (car elt))
                 (width (if (minusp width-spec)
                            (+ (window-width) width-spec)
                          width-spec))
-                (str (magic-buffer-list-format-internal (cadr elt)))
+                (str (magic-buffer-list-format-internal (cadr elt) t))
                 (plist (cddr elt))
                 (align (or (plist-get plist :align) 'left))
                 (trim (or (plist-get plist :trim) ""))
@@ -413,24 +497,34 @@ caching."
                                           align trim trim-align
                                           padding)))
         ((eq (car-safe elt) 'concat)
-         (mapconcat #'magic-buffer-list-format-internal
-                    (cdr elt)
-                    ""))
+         (mapcar #'magic-buffer-list-format-internal (cdr elt)))
         ((eq (car-safe elt) 'repeat)
-         (let ((name (cadr elt))
-               (string
+         (let ((times
+                (magic-buffer-list-format-internal (cadr elt)))
+               (value
                 (magic-buffer-list-format-internal (caddr elt))))
-           (magic-buffer-list-string-repeat
-            string
-            (magic-buffer-list-get name))))
+           (make-list times value)))
         ((eq (car-safe elt) 'if)
-         (let ((name (cadr elt))
-               (con (caddr elt))
-               (alt (car-safe (cdddr elt))))
-           (if (magic-buffer-list-get name)
-               (magic-buffer-list-format-internal con)
-             (magic-buffer-list-format-internal alt))))
+         (let ((condition (cadr elt))
+               (consequent (caddr elt))
+               (alternate (car-safe (cdddr elt))))
+           (if (magic-buffer-list-format-internal-eval condition)
+               (magic-buffer-list-format-internal-eval consequent)
+             (magic-buffer-list-format-internal-eval alternate))))
+        ((eq (car-safe elt) 'eval)
+         (eval (cadr elt)))
+        ((eq (car-safe elt) 'reeval)
+         (let ((value (eval (cadr elt))))
+           (magic-buffer-list-format-internal value)))
         (t (error "Unknown format spec %s" elt))))
+
+(defun magic-buffer-list-format-internal-flatten (data)
+  (reduce (lambda (l r)
+            (if (consp l)
+                (append (magic-buffer-list-format-internal-flatten l)
+                        r)
+              (cons l r)))
+          data :from-end t :initial-value ()))
 
 ;;
 ;; Render specs
@@ -458,14 +552,10 @@ caching."
                   (body (cddr group-spec))
                   (here (point)))
               (insert (magic-buffer-list-format-group-row
-                      group-format
-                      plist
-                      indent-level))
+                       group-format
+                       plist
+                       indent-level))
               (newline)
-              ;; XXX Use custom faces
-              (put-text-property here (point)
-                                 'face
-                                 '((background-color . "dim gray")))
               (magic-buffer-list-put-prop here (point)
                                           'group plist)
               (let ((indent-level (1+ indent-level)))
@@ -475,9 +565,9 @@ caching."
             (let ((buffer (cadr buffer-spec))
                   (here (point)))
               (insert (magic-buffer-list-format-buffer-row
-                      buffer-format
-                      buffer
-                      indent-level))
+                       buffer-format
+                       buffer
+                       indent-level))
               (newline)
               (magic-buffer-list-put-prop here (point)
                                           'buffer buffer)))
@@ -491,6 +581,7 @@ caching."
                                  (skip-chars-backward " \n\t")
                                  (point))
                  (point-max))
+  (magic-buffer-list-colorize)
   (goto-char (point-min))
   (setq buffer-read-only t))
 
@@ -569,28 +660,34 @@ caching."
 ;; Frame manipulations
 ;;
 
-(defvar magic-buffer-list-pop-up-min-context-lines 3)
+(defvar magic-buffer-list-pop-up-min-context-height 5)
 
 (defun magic-buffer-list-pop-up (buffer)
   (let ((in-buffer (eq (current-buffer) buffer))
         (prev-window (magic-buffer-list-un-pop-up buffer)))
     (when (and in-buffer prev-window)
       (select-window prev-window)))
-  (let ((orig-window (selected-window))
-        (orig-height (window-height))
-        (orig-buffer (current-buffer))
-        (window-split nil)
-        (buffer-point (with-current-buffer buffer (point)))
-        (buffer-lines (save-excursion
-                        (set-buffer buffer)
-                        (1+ (count-lines (point-min) (point-max)))))
-        (goal-lines (save-window-excursion
-                      (split-window nil 5)
-                      (window-height (next-window)))))
+  (let* ((orig-window (selected-window))
+         (orig-height (window-height))
+         (orig-buffer (current-buffer))
+         (window-split nil)
+         (buffer-point (with-current-buffer buffer (point)))
+         (buffer-lines (max (save-excursion
+                              (set-buffer buffer)
+                              (1+ (count-lines (point-min)
+                                               (point-max))))
+                            window-min-height))
+         (split-point (max magic-buffer-list-pop-up-min-context-height
+                           window-min-height))
+         (goal-lines
+          (save-window-excursion
+            (split-window nil split-point)
+            (window-height (next-window)))))
     (if (>= goal-lines buffer-lines)
         (progn
           ;; The buffer fits in the split window
-          (split-window nil (+ 5 (- goal-lines buffer-lines)))
+          (split-window nil (+ split-point
+                               (- goal-lines buffer-lines)))
           (select-window (next-window))
           (setq window-split t))
       ;; Resize this window to make it fit
@@ -633,17 +730,24 @@ caching."
               (and (window-live-p buf-window) buf-window)))))))
 
 ;;
-;; Overlays
+;; Line properties (overlays)
 ;;
 
 (defun magic-buffer-list-point-to-buffer (buffer)
   (goto-char (point-min))
-  (while (not (or (equal (magic-buffer-list-get-prop 'buffer)
-                         buffer)
-                  (eobp)))
+  (while (let ((buffer-here (magic-buffer-list-get-prop 'buffer)))
+           (and (or (not buffer-here)
+                    (not (eq buffer-here buffer)))
+                (not (eobp))))
     (forward-line))
   (if (eobp)
-      (goto-char (point-min))))
+      (progn
+        (goto-char (point-min))
+        (while (and (not (magic-buffer-list-get-prop 'buffer))
+                    (not (eobp)))
+          (forward-line))
+        nil)
+    t))
 
 (defun magic-buffer-list-get-prop (prop &optional pt)
   (let ((overlays (overlays-at (or pt (point))))
@@ -661,24 +765,98 @@ caching."
     (overlay-put overlay symbol value)))
 
 ;;
+;; Buffer flags
+;;
+
+(defun magic-buffer-list-set-buffer-flag (buffer flag)
+  (with-current-buffer buffer
+    (unless (boundp 'magic-buffer-list-buffer-flags)
+      (make-local-variable 'magic-buffer-list-buffer-flags)
+      (setq magic-buffer-list-buffer-flags ()))
+    (add-to-list 'magic-buffer-list-buffer-flags flag)))
+
+(defun magic-buffer-list-reset-buffer-flag (buffer flag)
+  (with-current-buffer buffer
+    (when (boundp 'magic-buffer-list-buffer-flags)
+      (setq magic-buffer-list-buffer-flags
+            (delete flag magic-buffer-list-buffer-flags))
+      (if (null magic-buffer-list-buffer-flags)
+          (kill-local-variable 'magic-buffer-list-buffer-flags)))))
+
+(defun magic-buffer-list-get-buffer-flag (buffer flag)
+  (with-current-buffer buffer
+    (when (boundp 'magic-buffer-list-buffer-flags)
+      (memq flag magic-buffer-list-buffer-flags))))
+
+(defun magic-buffer-list-get-buffers-with-flag (flag)
+  (remove-if-not
+   (lambda (buffer)
+     (magic-buffer-list-get-buffer-flag buffer flag))
+   (buffer-list)))
+
+;;
+;; Colorization
+;;
+
+;; XXX Use custom faces instead of hard-coding
+(defun magic-buffer-list-colorize (&optional buffer)
+  (save-excursion
+    (goto-char (point-min))
+    (beginning-of-line)
+    (while (not (eobp))
+      (dolist (overlay (overlays-at (point)))
+        (when (or (not buffer)
+                  (eq (magic-buffer-list-get-prop 'buffer) buffer))
+          (let ((group (overlay-get overlay
+                                    'magic-buffer-list-group))
+                (buffer (overlay-get overlay
+                                     'magic-buffer-list-buffer)))
+            (cond (group
+                   (overlay-put overlay
+                                'face '(:background "dim gray")))
+                  (buffer
+                   (let ((face
+                          (append
+                           (if (magic-buffer-list-get-buffer-flag
+                                buffer 'kill)
+                               '(:strike-through "red"))
+                           (if (magic-buffer-list-get-buffer-flag
+                                buffer 'save)
+                               '(:foreground "green")))))
+                     (overlay-put overlay 'face face))))))
+        (forward-line)))))
+
+;;
 ;; Major mode and interactive commands
 ;;
 
 (defvar magic-buffer-list-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map "q"    #'magic-buffer-list-un-pop-up)
-    (define-key map "\C-g" #'magic-buffer-list-un-pop-up)
+    (define-key map "q"    #'magic-buffer-list-int-expunge-and-quit)
+    (define-key map "\C-g" #'magic-buffer-list-int-expunge-and-quit)
     (define-key map "\C-m" #'magic-buffer-list-int-selected-goto)
     (define-key map "p"    #'magic-buffer-list-int-pivot)
     (define-key map "\C-i" #'magic-buffer-list-int-next-group)
+    (define-key map [up]   #'magic-buffer-list-int-prev-buffer)
+    (define-key map "\C-p" #'magic-buffer-list-int-prev-buffer)
+    (define-key map [down] #'magic-buffer-list-int-next-buffer)
+    (define-key map "\C-n" #'magic-buffer-list-int-next-buffer)
+    (define-key map "s"    #'magic-buffer-list-int-mark-save)
+    (define-key map "k"    #'magic-buffer-list-int-mark-kill)
+    (define-key map "x"    #'magic-buffer-list-int-expunge)
+    (define-key map "u"    #'magic-buffer-list-int-unmark)
     map))
 
 (define-derived-mode magic-buffer-list-mode
   fundamental-mode "Buffers"
   "Major mode for magic-buffer-list buffer list buffers."
-  (setq truncate-lines t)
-  )
+  (setq truncate-lines t))
 (put 'magic-buffer-list-mode 'mode-class 'special)
+
+(defun magic-buffer-list-int-expunge-and-quit ()
+  (interactive)
+  (magic-buffer-list-int-expunge)
+  (magic-buffer-list-un-pop-up))
 
 (defun magic-buffer-list-int-selected-goto ()
   (interactive)
@@ -727,5 +905,80 @@ caching."
         (skip)
         (if (eobp)
             (goto-char here))))))
+
+(defun magic-buffer-list-int-next-buffer ()
+  (interactive)
+  (let ((here (point)))
+    (forward-line)
+    (while (and (null (magic-buffer-list-get-prop 'buffer))
+                (not (eobp)))
+      (forward-line))
+    (if (eobp)
+        (progn
+          (goto-char here)
+          nil)
+      t)))
+
+(defun magic-buffer-list-int-prev-buffer ()
+  (interactive)
+  (let ((here (point)))
+    (forward-line -1)
+    (while (and (null (magic-buffer-list-get-prop 'buffer))
+                (not (bobp)))
+      (forward-line -1))
+    (if (bobp)
+        (progn
+          (goto-char here)
+          nil)
+      t)))
+
+(defun magic-buffer-list-int-mark-save ()
+  (interactive)
+  (let ((buffer (magic-buffer-list-get-prop 'buffer)))
+    (if (null buffer)
+        (ding)
+      (magic-buffer-list-set-buffer-flag buffer 'save)
+      (magic-buffer-list-int-next-buffer)
+      (magic-buffer-list-colorize buffer))))
+
+(defun magic-buffer-list-int-mark-kill ()
+  (interactive)
+  (let ((buffer (magic-buffer-list-get-prop 'buffer)))
+    (if (null buffer)
+        (ding)
+      (magic-buffer-list-set-buffer-flag buffer 'kill)
+      (magic-buffer-list-int-next-buffer)
+      (magic-buffer-list-colorize buffer))))
+
+(defun magic-buffer-list-int-unmark ()
+  (interactive)
+  (let ((buffer (magic-buffer-list-get-prop 'buffer)))
+    (if (null buffer)
+        (ding)
+      (magic-buffer-list-reset-buffer-flag buffer 'save)
+      (magic-buffer-list-reset-buffer-flag buffer 'kill)
+      (magic-buffer-list-int-next-buffer)
+      (magic-buffer-list-colorize buffer))))
+
+(defun magic-buffer-list-int-expunge ()
+  (interactive)
+  (while (and (let ((buffer (magic-buffer-list-get-prop 'buffer)))
+                (if buffer
+                    (magic-buffer-list-get-buffer-flag buffer 'kill)
+                  t))
+              (magic-buffer-list-int-next-buffer))
+    nil)
+  (let ((buffer (magic-buffer-list-get-prop 'buffer)))
+    (dolist (save (magic-buffer-list-get-buffers-with-flag 'save))
+      (magic-buffer-list-point-to-buffer save)
+      (with-current-buffer save
+        (save-buffer))
+      (magic-buffer-list-reset-buffer-flag buffer 'save))
+    (dolist (kill (magic-buffer-list-get-buffers-with-flag 'kill))
+      (magic-buffer-list-point-to-buffer kill)
+      (kill-buffer kill))
+    (magic-buffer-list-show-view magic-buffer-list-current-view
+                                 (if (buffer-live-p buffer)
+                                     buffer))))
 
 (provide 'magic-buffer-list)

@@ -151,7 +151,9 @@ really slow things down."
   "Sets useful global bindings."
   (global-set-key "\C-c\g"   (function goto-line))
   (global-set-key "\C-x\C-k" (function kill-buffer))
-  (global-set-key "\C-x\C-b" (function electric-buffer-list))
+  (if (require 'magic-buffer-list nil t)
+      (global-set-key "\C-x\C-b" (function magic-buffer-list))
+    (global-set-key "\C-x\C-b" (function electric-buffer-list)))
   ;; The following is because some terminals use C-h and some use C-?
   ;; for backspace.  Emacs by default only understands C-?.  I'm sure
   ;; one of these is the Right Way and I shouldn't even be using Emacs
