@@ -353,7 +353,9 @@ re-indents the region."
                        auto-close-brace))
          (close-brace-point (if embrace
                                 (set-marker (make-marker)
-                                            (region-end))))
+                                            (save-excursion
+                                              (goto-char (region-end))
+                                              (line-end-position)))))
          return-to-point)
     (when embrace
       (goto-char (region-beginning)))
