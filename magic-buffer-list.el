@@ -146,66 +146,53 @@
 ;;    the buffers by the number of bits of information associated with
 ;;    the event of switching from the current buffer to the new
 ;;    buffer.
+;; *** Buffer switch entropy
+;; ** Emacs' MRU ordering can be seen as a cheap approximation of
+;;    buffer relatedness.
 ;;
 ;; * Preview buffer option.  Show the buffer that would be switched to
 ;;   when the selection is changed.  Revert to the original buffer if
 ;;   canceled
 ;; * Autoselect next buffer option.  When popping up, automatically
-;;   select the next buffer instead of the current buffer.
+;;   select the next buffer instead of the current buffer.  It would
+;;   be nice if this were more easily customizable.
 
-;;; Code:
 
-(defun magic-buffer-list-reload ()
-  (interactive)
-  (if (featurep 'magic-buffer-list)
-      (unload-feature 'magic-buffer-list t))
-  (load-file "~/sys/elisp/magic-buffer-list.el"))
+;; list-buffers is arcane.  On the other hand, it does precisely what
+;; it says: it lists buffers.  However, time and again, its overly
+;; simplistic interface has been used as the basis for buffer
+;; navigation.
 
-(require 'cl)
+;; Extensibility
 
-(defvar magic-buffer-list-ignore-re "^ ")
+;; magic-buffer-list is designed to be highly extensible, but provide
+;; reasonable and usable defaults.  Many components go into producing
+;; a view of the buffer list, and the easiest way to customize
+;; magic-buffer-list is to piece together provided components.
+;; However, if the existing components aren't enough and you're
+;; willing to dive into Elisp, you can completely customize the look,
+;; feel, and organization of magic-buffer-list.
 
-(defconst magic-buffer-list-buffer-name " *Magic Buffer List*")
+;; Scalability
 
-(defun magic-buffer-list ()
-  (interactive)
-  (magic-buffer-list-show-view
-   nil
-   (current-buffer)
-   (car magic-buffer-list-view-sequence))
-  ;; XXX Do this better
-  (message
-   "RET selects buffer, q buries list, p pivots, TAB jumps to next group"))
+;; magic-buffer-list is designed to effectively scale up to huge
+;; numbers of buffers, without losing its usefulness when used for
+;; small numbers of buffers.
 
-;;
-;; Views
-;;
+;;; Customization:
 
-(defvar magic-buffer-list-view-basic-flags
-  '(concat
-    (if modified "*" " ")
-    (if read-only "%" " ")
-    (if visible "V" " ")))
+(defgroup magic-buffer-list nil
+  "")
 
-(defvar magic-buffer-list-view-basic-info
-  '(concat
-    (25 (concat (repeat indent-level "  ") name) :trim "..")
-    " "
-    (4 size-string :align right)
-    " "
-    (reeval magic-buffer-list-view-basic-flags)))
-
-(defvar magic-buffer-list-view-basic-group
-  '(concat
-    (repeat indent-level "  ")
-    title))
-
-(defvar magic-buffer-list-views
+(defcustom magic-buffer-list-views
   `((t
+     :filter (,#'magic-buffer-list-view-filter-system-buffers
+              ,#'magic-buffer-list-view-filter-most-star-buffers)
      :sorter ,#'magic-buffer-list-view-sort-mru
      :grouper ,#'magic-buffer-list-view-group-by-none
      :format (" " (reeval magic-buffer-list-view-basic-info))
-     :group-format (" " (reeval magic-buffer-list-view-basic-group)))
+     :group-format (" " (reeval magic-buffer-list-view-basic-group))
+     :select-next-buffer t)
     (group-by-major-mode
      :grouper ,#'magic-buffer-list-view-group-by-major-mode
      :format (" "
@@ -227,23 +214,200 @@
               " "
               (15 major-mode :trim "..")
               " "
-              filename-sans-directory))))
+              filename-sans-directory)))
+  "List of available buffer list views.
 
-(defvar magic-buffer-list-view-sequence
-  '(group-by-major-mode group-by-directory))
+This is an alist, where each key should be either a symbol naming the
+view, or the value t to indicate default view values.  The value of
+each element should be a property list, specifying how to build and
+format each view.  If a view lacks a particular property, it will
+inherit the value of that property from the view named t.  The
+available properties are:
+
+* :filter - Specifies either a function or a list of functions to use
+  as filters for the buffer list before sorting or grouping it.
+  Filter functions must take a single argument which will be a list of
+  buffers and must return a subset of that list.  If a list of
+  functions is specified, those functions are composed to form the
+  filter.  If this property is omitted or null, no filtering will be
+  performed.  The filter should typically include at least
+  `magic-buffer-list-view-filter-system-buffers'.  All provided
+  filters have the prefix magic-buffer-list-view-filter-.
+* :sorter - Specifies a function to sort the buffer list before
+  grouping it.  Most (though not necessary all) groupers use the order
+  of the buffers as a hint on the order of their output.  This
+  function should take a list of buffers and return some permutation
+  of it.  If this property is omitted or null, the buffer list will
+  not be sorted.  All provided sorters have the prefix
+  magic-buffer-list-view-sort-.
+* :grouper - Specifies a function to group a buffer list.  This
+  function should take a list of buffers and return a render spec.
+  See `magic-buffer-list-render' for information about render
+  specs.  If this property is omitted or null, it defaults to
+  `magic-buffer-list-view-group-by-none'.  All provided groupers have
+  the prefix magic-buffer-list-view-group-by-.
+* :format - Specifies the format of buffer lines in the buffer list.
+  See `magic-buffer-list-format-buffer-row' for information about
+  format specs for buffers.
+* :group-format - Specifies the format of group lines in the buffer
+  list.  See `magic-buffer-list-format-group-row' for information
+  about format specs for groups.
+* :select-next-buffer - When the buffer list is first popped up via
+  `magic-buffer-list', if this view is selected and this property is
+  t, then immediately select the next buffer, instead of the current
+  one.
+
+The process for showing a view is to get the unadulterated buffer
+list, filter it, sort it, and then group it.  This produces the
+structure that will be visible in the buffer list (the render spec).
+This structure is then rendered, with buffer lines formatted according
+to :format and group lines formatted according to :group-format."
+  :group 'magic-buffer-list
+;;  :type '(alist :key-type symbol :value-type plist)
+;;  :options '(t)
+  :type '(restricted-sexp
+          :match-alternatives (magic-buffer-list-valid-views-p)))
+
+(defcustom magic-buffer-list-view-sequence
+  '(group-by-major-mode group-by-directory)
+  "Sequence of views from `magic-buffer-list-views' to cycle through.
+
+This is a list of symbols, where each symbol must be the name of a
+view from `magic-buffer-list-views'.  When the buffer list is first
+popped it, the first view from this list is selected.  Subsequent
+pivoting cycles forward through this list."
+  :group 'magic-buffer-list
+  :type '(repeat symbol))
+
+;;; Code:
+
+(defun magic-buffer-list-reload ()
+  "Utility function for reloading magic-buffer-list.  This is meant to
+be used while developing magic-buffer-list, and will probably go away
+when it's stable enough to not need constant reloading."
+  (interactive)
+  (let ((file (if (featurep 'magic-buffer-list)
+                  (feature-file 'magic-buffer-list)
+                (or (locate-library "magic-buffer-list")
+                    "~/sys/elisp/magic-buffer-list.el"))))
+    (if (featurep 'magic-buffer-list)
+        (unload-feature 'magic-buffer-list t))
+    (unless (file-exists-p file)
+      (error "Couldn't find magic-buffer-list.el.  Use M-x load-file"))
+    (load-file file)))
+
+(require 'cl)
+
+(defconst magic-buffer-list-buffer-name " *Magic Buffer List*"
+  "Buffer name of the magic-buffer-list list buffer")
+
+(defun magic-buffer-list ()
+  "Pop up the magic buffer list in the previously used view.  If this
+is the first time the buffer list is being popped up, the first view
+from `magic-buffer-list-view-sequence' is used.  Depending on the
+value of the view's :select-next-buffer property, either the current
+buffer or the next buffer is selected."
+  (interactive)
+  (magic-buffer-list-show-view nil (current-buffer) t)
+  ;; XXX Do this better
+  (message
+   "RET selects buffer, q buries list, p pivots, TAB jumps to next group"))
+
+;;
+;; Views
+;;
+
+(defvar magic-buffer-list-view-basic-flags
+  '(concat
+    (if modified "*" " ")
+    (if read-only "%" " ")
+    (if visible "V" " "))
+  "Basic buffer flags.  Use
+'(reeval magic-buffer-list-view-basic-flags)' in a buffer format spec
+to insert modified, read-only, and visible flags.")
+
+(defvar magic-buffer-list-view-basic-info
+  '(concat
+    (25 (concat (repeat indent-level "  ") name) :trim "..")
+    " "
+    (4 size-string :align right)
+    " "
+    (reeval magic-buffer-list-view-basic-flags))
+  "Basic buffer information.  This include the buffer's name, indented
+to the current level, the size of the buffer, and the basic flags for
+the buffer.  Use '(reeval magic-buffer-list-view-basic-info)' in a
+buffer format spec to insert this information.")
+
+(defvar magic-buffer-list-view-basic-group
+  '(concat
+    (repeat indent-level "  ")
+    title)
+  "Basic group information.  This is just the group's title, indented
+to the current level.  Use
+'(reeval magic-buffer-list-view-basic-group)' in a group format spec
+to insert this information.")
+
+(defun magic-buffer-list-valid-views-p (views)
+  "Predicate for basic validity checking of a views list."
+  (let ((properties '(:filter :sorter :grouper :format :group-format
+                              :select-next-buffer)))
+    (and (listp views)
+         (every (lambda (v) (and (listp v)
+                                 (not (null v))
+                                 (symbolp (car v))))
+                views)
+         (every (lambda (v)
+                  (do ((plist (cdr v) (cddr plist)))
+                      ((or (null plist)
+                           (null (cdr plist))
+                           (not (memq (car plist) properties)))
+                       (null plist))))
+                views))))
+
+(defun magic-buffer-list-view-filter-system-buffers (buffers)
+  "Buffer list filter that eliminates system buffers.  This filter
+should almost always be used, as system buffers are meant to be hidden
+from the user."
+  (remove-if (lambda (buffer)
+               (let ((name (buffer-name buffer)))
+                 (or (string= (substring name 0 1) " ")
+                     (string= name magic-buffer-list-buffer-name))))
+             buffers))
+
+(defun magic-buffer-list-view-filter-most-star-buffers (buffers)
+  "Buffer list filter that eliminates all \"starred\" buffers except
+the scratch buffer."
+  (remove-if (lambda (buffer)
+               (let ((name (buffer-name buffer)))
+                 (and (string= (substring name 0 1) "*")
+                      (string= (substring name -1) "*")
+                      (not (string= name "*scratch*")))))
+             buffers))
 
 (defun magic-buffer-list-view-sort-mru (buffers)
+  "Buffer list sorter that sorts according to MRU.  This is the way
+most buffer lists are sorted (such as `list-buffers')."
+  ;; In the current implementation, the buffer list should already be
+  ;; sorted this way, and it's hard to actually do it.
   buffers)
 
 (defun magic-buffer-list-view-sort-alphabetical (buffers)
+  "Buffer list sorter that sorts in alphabetical order by buffer
+name.  Comparisons are done using `string<'."
   (sort buffers
         (lambda (a b)
           (string< (buffer-name a) (buffer-name b)))))
 
 (defun magic-buffer-list-view-group-by-none (buffers)
+  "Buffer list grouper that does no grouping.  This is essentially an
+identity grouper and produces a flat buffer list, similar to typical
+buffer lists."
   (mapcar (lambda (buffer) `(buffer ,buffer)) buffers))
 
 (defun magic-buffer-list-view-group-by-major-mode (buffers)
+  "Buffer list grouper that groups by major mode.  Within each group,
+buffers are sorted according to the incoming sort, and the groups are
+sorted according to the earliest buffer in each group."
   (magic-buffer-list-coalesce-groups
    (mapcar
     (lambda (buffer)
@@ -252,161 +416,254 @@
     buffers)))
 
 (defun magic-buffer-list-view-group-by-directory (buffers)
+  "Buffer list grouper that groups hierarchically by directory.
+Directories that contain only a single subdirectory in the hierarchy
+are collapsed to save space.  Within each directory, buffers are
+placed above subdirectories, buffers are sorted according to the
+incoming sort, and subdirectories are sorted according to the earliest
+buffer in the subdirectory.  Directoryless buffers (such as the
+scratch buffer) are placed in a special group that appears after
+everything else."
+  ;; There are two types of buffers, the haves and the have-nots.
+  ;; directoried will be a list of group render components for have
+  ;; buffers.  nondirectoried is just a list of have-not buffers.
   (let (directoried nondirectoried)
     (dolist (buffer buffers)
       (let ((directory (magic-buffer-list-get 'directory buffer)))
         (if (null directory)
+            ;; Have-not
             (push buffer nondirectoried)
+          ;; Have.  Split up the directory into components
           (let* ((dirlist-almost (split-string directory "/"))
+                 ;; But tack the initial / back on if there is one
                  (dirlist
                   (cons (if (equal (substring directory 0 1) "/")
                             (concat "/" (car dirlist-almost))
                           (car dirlist-almost))
                         (cdr dirlist-almost)))
+                 ;; Start out with just a buffer render component
                  (group `(buffer ,buffer)))
+            ;; For each directory component, wrap group in the next
+            ;; group.
             (dolist (dir (reverse dirlist))
               (setq group `(group (:title ,(concat dir "/")) ,group)))
             (push group directoried)))))
     (append
+     ;; Format the haves
      (magic-buffer-list-swivel-groups
       (magic-buffer-list-collapse-singleton-groups
        (magic-buffer-list-coalesce-groups (reverse directoried))
        "")
+      ;; Put buffers above directories.  It looks nicer
       t)
+     ;; Wrap the have-nots in a special group at the end
      `((group (:title "(no directory)")
               ,@(mapcar (lambda (buffer) `(buffer ,buffer))
                         (reverse nondirectoried)))))))
 
-(defun magic-buffer-list-get-buffers ()
-  (remove-if (lambda (buffer)
-               (let ((name (buffer-name buffer)))
-                 (or (string-match magic-buffer-list-ignore-re name)
-                     (string= name magic-buffer-list-buffer-name))))
-             (buffer-list)))
-
 (defun magic-buffer-list-show-view (view-name &optional
                                               select-buffer
-                                              default-view-name)
+                                              initial-appearance)
+  "Show a magic buffer list view.  view-name must either by nil, or
+must specify one of the views in `magic-buffer-list-views'.  If
+view-name is nil, the previously used view type is reused, or, if
+there is no previously used view type, the first type in
+`magic-buffer-list-view-sequence' is used.  select-buffer, if
+provided, must be the buffer to select once the view is built.  If the
+view specifies :select-next-buffer and initial-appearance is true,
+then the buffer after select-buffer is selected instead.  Once this is
+done building the view, it pops up the list.  If the list is already
+visible, this resizes it to the new appropriate size."
+  (unless (magic-buffer-list-valid-views-p magic-buffer-list-views)
+    (error "The value of magic-buffer-list-views is malformed"))
   (let ((buffer (get-buffer-create magic-buffer-list-buffer-name)))
-    (save-excursion
-      (set-buffer buffer)
+    (with-current-buffer buffer
+      ;; Maybe switch modes.  This needs to be done early and once so
+      ;; it doesn't clobber buffer-local variables.
+      (if (not (eq major-mode 'magic-buffer-list-mode))
+          (magic-buffer-list-mode))
+      ;; Get the view
       (let* ((view-name (or view-name
                             (if (boundp
                                  'magic-buffer-list-current-view)
                                 magic-buffer-list-current-view)
-                            default-view-name))
+                            (car magic-buffer-list-view-sequence)))
              (view
               (cdr-safe (assq view-name magic-buffer-list-views)))
              (default-view
-              (cdr-safe (assq t magic-buffer-list-views))))
+               (cdr-safe (assq t magic-buffer-list-views))))
         (if (null view)
             (error "Unknown view: %s" view-name))
+        ;; Get the view properties
         (flet ((view-get
                 (prop)
                 (if (plist-member view prop)
                     (plist-get view prop)
                   (plist-get default-view prop))))
-          (let ((sorter (view-get :sorter))
+          (let ((filter (view-get :filter))
+                (sorter (view-get :sorter))
                 (grouper (view-get :grouper))
                 (buffer-format (view-get :format))
-                (group-format (view-get :group-format)))
-            (magic-buffer-list-mode)
-            (let* ((buffers (magic-buffer-list-get-buffers))
-                   (sorted-buffers (if sorter
-                                       (funcall sorter buffers)
-                                     buffers))
-                   (spec (funcall grouper sorted-buffers)))
+                (group-format (view-get :group-format))
+                (select-next-buffer (view-get :select-next-buffer)))
+            ;; Get the buffers, filter them, sort them, and group them
+            (let* ((buffers (buffer-list))
+                   (filtered-buffers
+                    (cond ((null filter)
+                           buffers)
+                          ((functionp filter)
+                           (funcall filter buffers))
+                          ((listp filter)
+                           (dolist (f filter)
+                             (setq buffers (funcall f buffers)))
+                           buffers)))
+                   (sorted-buffers
+                    (if sorter
+                        (funcall sorter filtered-buffers)
+                      buffers))
+                   (spec
+                    (funcall (or grouper
+                                 #'magic-buffer-list-view-group-by-none)
+                             sorted-buffers)))
+              ;; Render the buffer list
               (magic-buffer-list-render spec
                                         buffer-format
-                                        group-format))))
+                                        group-format))
+            ;; Point to the appropriate buffer
+            (magic-buffer-list-point-to-buffer select-buffer)
+            (if (and initial-appearance select-next-buffer)
+                (magic-buffer-list-int-next-buffer))))
+        ;; Record the current view
         (make-local-variable 'magic-buffer-list-current-view)
         (setq magic-buffer-list-current-view view-name)))
     ;; Now that we're done building the view and have unexcursed, pop
     ;; up the buffer
-    (magic-buffer-list-pop-up buffer)
-    ;; and select the right buffer in the list
-    (magic-buffer-list-point-to-buffer select-buffer)))
+    (magic-buffer-list-pop-up buffer)))
 
 ;;
 ;; Getters
 ;;
 
-(defun magic-buffer-list-get (property &optional buffer)
-  "Used for column values, and recommended for use by view builders
-for consistency.  In the future, this may employ optimizations such as
-caching."
+(defun magic-buffer-list-get (name &optional buffer)
+  "Get the value of the getter specified by name.  If buffer is
+specified, then do the getting in buffer, otherwise do it in the
+current buffer.
+
+Getters are used by numerous components of magic-buffer-list.  Buffer
+and group line formats use getters to retrieve values to display in
+the columns of the buffer list.  Some filters, sorters, and groupers
+likewise use getters to retrieve information about buffers, since they
+provide a uniform and data-driven way to access buffer information.
+
+Getters are functions whose names are prefixed with
+`magic-buffer-list-getter-prefix', followed by a hyphen, followed by
+the name of the getter.  The function should take no arguments.  It
+will be called with the current buffer set the buffer.
+
+In the future, this may employ optimizations such as caching."
   (let ((getter (intern
                  (concat (symbol-name magic-buffer-list-getter-prefix)
                          "-"
-                         (symbol-name property)))))
+                         (symbol-name name)))))
     (if (functionp getter)
         (with-current-buffer (or buffer (current-buffer))
           (funcall getter))
-      (error "No such property: %s" property))))
+      (error "No such getter: %s" name))))
 
-(defvar magic-buffer-list-getter-prefix 'magic-buffer-list-getter)
+(defvar magic-buffer-list-getter-prefix 'magic-buffer-list-getter
+  "The getter system support multiple, independent namespaces of
+getters.  This specifies the prefix of the function names that
+comprise the current namespace.  This is used, for example, by the
+group formatter to create a getter namespace independent of the one
+that only makes sense for buffers.")
 
 (defun magic-buffer-list-getter-name ()
+  "Get the buffer name"
   (buffer-name))
 (defun magic-buffer-list-getter-filename ()
+  "Get the abbreviated file name (including directory), or nil if no
+filename"
   (let ((filename (buffer-file-name buffer)))
     (when filename (abbreviate-file-name filename))))
 (defun magic-buffer-list-getter-filename-dimmed ()
+  "Get the abbreviated file name, and dim the directory component"
   (let ((directory (magic-buffer-list-get 'directory))
         (filename (magic-buffer-list-get 'filename-sans-directory)))
     (when (and directory filename)
+      ;; XXX Do the face right
       (concat (propertize directory 'face '((:foreground "gray")))
               filename))))
 (defun magic-buffer-list-getter-directory ()
+  "Get the directory name, or nil if no directory"
   (let ((filename (magic-buffer-list-get 'filename buffer)))
     (when filename (file-name-directory filename))))
 (defun magic-buffer-list-getter-filename-sans-directory ()
+  "Get the filename without directory, or nil if no filename"
   (let ((filename (magic-buffer-list-get 'filename buffer)))
     (when filename (file-name-nondirectory filename))))
 (defun magic-buffer-list-getter-major-mode ()
+  "Get the major mode"
   mode-name)
 (defun magic-buffer-list-getter-size ()
+  "Get the buffer size, as a number"
   (buffer-size))
-(defun magic-buffer-list-sizify (size)
-  ;; XXX Yeah, I know Emacs can't represent sizes bigger than 134M
-  (if (and (<= size 9999) nil)
-      (number-to-string size)
-    (let* ((postfixes (list "B" "K" "M" "G" "T" "P"))
-           (last-postfix (car (last postfixes)))
-           (divider 1000.0)
-           (power 0))
-      (catch 'done
-        (dolist (postfix postfixes)
-          (let ((new-size (/ size (expt divider power))))
-            (cond ((and (< new-size 10) (= power 0))
-                   (throw 'done
-                          (concat (number-to-string (floor new-size))
-                                  postfix)))
-                  ((< new-size 10)
-                   (throw 'done
-                          (concat (number-to-string
-                                   (/ (ffloor (* new-size
-                                                        10))
-                                             10))
-                                  postfix)))
-                  ((or (< new-size 1000)
-                       (equal postfix last-postfix))
-                   (throw 'done (concat (number-to-string
-                                         (floor new-size))
-                                        postfix))))
-            (incf power)))))))
 (defun magic-buffer-list-getter-size-string ()
+  "Get the buffer size, pretty-printed as a string"
   (magic-buffer-list-sizify (magic-buffer-list-get 'size)))
 (defun magic-buffer-list-getter-display-time ()
+  "Get the buffer's last display time, as a float, or 0 if it has
+never been displayed"
   (if buffer-display-time
       (float buffer-display-time)
     0))
 (defun magic-buffer-list-getter-modified ()
+  "Get whether or not the buffer is modified, as a boolean"
   (buffer-modified-p))
 (defun magic-buffer-list-getter-read-only ()
+  "Get whether or not the buffer is read-only, as a boolean"
   buffer-read-only)
 (defun magic-buffer-list-getter-visible ()
+  "Get whether or not the buffer is visible in any window, as a
+boolean"
   (not (null (get-buffer-window (current-buffer) t))))
+
+;;
+;; Getter utilities
+;;
+
+(defun magic-buffer-list-sizify (size)
+  "Pretty-print size as a possibly suffixed floating point number.
+This tries to make the resulting string length at most 4 characters."
+  ;; XXX Yeah, I know Emacs can't represent sizes bigger than 134M
+  (let* ((suffixes (list "B" "K" "M" "G" "T" "P"))
+         (last-suffix (car (last suffixes)))
+         (divisor 1000.0)
+         (power 0))
+    (catch 'done
+      (dolist (suffix suffixes)
+        (let ((new-size (/ size (expt divisor power))))
+          (cond ((and (< new-size 10) (= power 0))
+                 ;; Size is small, but shouldn't be printed as a
+                 ;; floating point
+                 (throw 'done
+                        (concat (number-to-string (floor new-size))
+                                suffix)))
+                ((< new-size 10)
+                 ;; Size the small enough to fit one decimal place
+                 (throw 'done
+                        (concat (number-to-string
+                                 (/ (ffloor (* new-size 10)) 10))
+                                suffix)))
+                ((or (< new-size 1000)
+                     (equal suffix last-suffix))
+                 ;; Size is small enough to fit three digits in (or
+                 ;; we're out of suffixes)
+                 (throw 'done (concat (number-to-string
+                                       (floor new-size))
+                                      suffix)))
+                (t
+                 ;; Try the next power
+                 (incf power))))))))
 
 ;;
 ;; Line specs
@@ -853,10 +1110,14 @@ caching."
   (setq truncate-lines t))
 (put 'magic-buffer-list-mode 'mode-class 'special)
 
+(defun magic-buffer-list-int-quit ()
+  (interactive)
+  (magic-buffer-list-un-pop-up))
+
 (defun magic-buffer-list-int-expunge-and-quit ()
   (interactive)
   (magic-buffer-list-int-expunge)
-  (magic-buffer-list-un-pop-up))
+  (magic-buffer-list-int-quit))
 
 (defun magic-buffer-list-int-selected-goto ()
   (interactive)
