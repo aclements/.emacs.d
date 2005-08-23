@@ -182,7 +182,7 @@
 ;;; Customization:
 
 (defgroup magic-buffer-list nil
-  "")
+  "XXX")
 
 (defcustom magic-buffer-list-views
   `((t
@@ -279,6 +279,10 @@ pivoting cycles forward through this list."
   :group 'magic-buffer-list
   :type '(repeat symbol))
 
+(defcustom magic-buffer-list-preview t
+  "XXX"
+  :type 'boolean)
+
 ;;; Code:
 
 (defun magic-buffer-list-reload ()
@@ -286,7 +290,11 @@ pivoting cycles forward through this list."
 be used while developing magic-buffer-list, and will probably go away
 when it's stable enough to not need constant reloading."
   (interactive)
-  (let ((file (if (featurep 'magic-buffer-list)
+  (let ((buffer (get-buffer magic-buffer-list-buffer-name)))
+    (if buffer
+        (kill-buffer buffer)))
+  (let ((file (if (and (featurep 'magic-buffer-list)
+                       (fboundp 'feature-file))
                   (feature-file 'magic-buffer-list)
                 (or (locate-library "magic-buffer-list")
                     "~/sys/elisp/magic-buffer-list.el"))))
@@ -538,7 +546,10 @@ visible, this resizes it to the new appropriate size."
         (setq magic-buffer-list-current-view view-name)))
     ;; Now that we're done building the view and have unexcursed, pop
     ;; up the buffer
-    (magic-buffer-list-pop-up buffer)))
+    (magic-buffer-list-pop-up buffer)
+    ;; Update the preview, ignoring the cache (which may now be
+    ;; invalid)
+    (magic-buffer-list-update-preview t)))
 
 ;;
 ;; Getters
@@ -926,6 +937,7 @@ This tries to make the resulting string length at most 4 characters."
       (select-window prev-window)))
   (let* ((orig-window (selected-window))
          (orig-height (window-height))
+         (orig-window-start (window-start))
          (orig-buffer (current-buffer))
          (window-split nil)
          (buffer-point (with-current-buffer buffer (point)))
@@ -957,8 +969,8 @@ This tries to make the resulting string length at most 4 characters."
       (make-local-variable 'magic-buffer-list-pop-up-buffer-state)
       (put 'magic-buffer-list-pop-up-buffer-state 'permanent-local t))
     (setq magic-buffer-list-pop-up-buffer-state
-          (list (selected-window) orig-window orig-height orig-buffer
-                window-split))))
+          (list (selected-window) orig-window orig-height
+                orig-window-start orig-buffer window-split))))
 
 (defun magic-buffer-list-un-pop-up (&optional buffer)
   (interactive)
@@ -972,19 +984,33 @@ This tries to make the resulting string length at most 4 characters."
       (let ((buf-window (nth 0 state))
             (orig-window (nth 1 state))
             (orig-height (nth 2 state))
-            (orig-buffer (nth 3 state))
-            (window-split (nth 4 state)))
+            (orig-window-start (nth 3 state))
+            (orig-buffer (nth 4 state))
+            (window-split (nth 5 state)))
         (save-selected-window
           (when (and window-split (window-live-p buf-window))
             (delete-window buf-window))
           (when (window-live-p orig-window)
             (select-window orig-window)
             (enlarge-window (- orig-height (window-height)))
-            (when (and (not window-split) (buffer-live-p orig-buffer))
+            (when (and (buffer-live-p orig-buffer))
               (switch-to-buffer orig-buffer))
+            (set-window-start orig-window orig-window-start)
             orig-window)
           (or (and (window-live-p orig-window) orig-window)
               (and (window-live-p buf-window) buf-window)))))))
+
+(defun magic-buffer-list-pop-up-preview (buffer)
+  (unless (boundp 'magic-buffer-list-pop-up-buffer-state)
+    (error "Preview must be called from a popped up buffer"))
+  (let* ((state magic-buffer-list-pop-up-buffer-state)
+         (orig-window (nth 1 state))
+         (window-split (nth 5 state)))
+    (if (and window-split
+             (window-live-p orig-window))
+        (save-selected-window
+          (select-window orig-window)
+          (switch-to-buffer buffer t)))))
 
 ;;
 ;; Line properties (overlays)
@@ -1084,7 +1110,7 @@ This tries to make the resulting string length at most 4 characters."
         (forward-line)))))
 
 ;;
-;; Major mode and interactive commands
+;; Major mode and interaction
 ;;
 
 (defvar magic-buffer-list-mode-map
@@ -1107,8 +1133,23 @@ This tries to make the resulting string length at most 4 characters."
 (define-derived-mode magic-buffer-list-mode
   fundamental-mode "Buffers"
   "Major mode for magic-buffer-list buffer list buffers."
-  (setq truncate-lines t))
+  (setq truncate-lines t)
+  (make-local-variable 'magic-buffer-list-last-point)
+  (setq magic-buffer-list-last-point -1)
+  (add-hook 'post-command-hook #'magic-buffer-list-update-preview
+            nil t))
 (put 'magic-buffer-list-mode 'mode-class 'special)
+
+(defun magic-buffer-list-update-preview (&optional ignore-cache)
+  (when (and magic-buffer-list-preview
+             (or ignore-cache
+                 (and (boundp 'magic-buffer-list-last-point)
+                      (/= magic-buffer-list-last-point
+                          (line-beginning-position)))))
+    (setq magic-buffer-list-last-point (line-beginning-position))
+    (let ((buffer (magic-buffer-list-get-prop 'buffer)))
+      (if buffer
+          (magic-buffer-list-pop-up-preview buffer)))))
 
 (defun magic-buffer-list-int-quit ()
   (interactive)
@@ -1133,14 +1174,15 @@ This tries to make the resulting string length at most 4 characters."
   (interactive)
   (let ((buffer (magic-buffer-list-get-prop 'buffer)))
     (if (null buffer)
-        ;; XXX Just switch to the next view and reselect the
-        ;; originally selected buffer
-        (message "You can only pivot around a buffer")
-      (let ((next-view
-             (car (or (cdr-safe (memq magic-buffer-list-current-view
-                                      magic-buffer-list-view-sequence))
-                      magic-buffer-list-view-sequence))))
-        (magic-buffer-list-show-view next-view buffer)))))
+        (setq buffer (magic-buffer-list-int-next-buffer)))
+    (if (null buffer)
+        ;; Fight mind games with mind games
+        (message "You can't do that in horizontal mode"))
+    (let ((next-view
+           (car (or (cdr-safe (memq magic-buffer-list-current-view
+                                    magic-buffer-list-view-sequence))
+                    magic-buffer-list-view-sequence))))
+      (magic-buffer-list-show-view next-view buffer))))
 
 (defun magic-buffer-list-int-next-group ()
   (interactive)
@@ -1178,7 +1220,7 @@ This tries to make the resulting string length at most 4 characters."
         (progn
           (goto-char here)
           nil)
-      t)))
+      (magic-buffer-list-get-prop 'buffer))))
 
 (defun magic-buffer-list-int-prev-buffer ()
   (interactive)
@@ -1191,7 +1233,7 @@ This tries to make the resulting string length at most 4 characters."
         (progn
           (goto-char here)
           nil)
-      t)))
+      (magic-buffer-list-get-prop 'buffer))))
 
 (defun magic-buffer-list-int-mark-save ()
   (interactive)
