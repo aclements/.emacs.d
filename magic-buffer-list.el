@@ -156,6 +156,9 @@
 ;; * Autoselect next buffer option.  When popping up, automatically
 ;;   select the next buffer instead of the current buffer.  It would
 ;;   be nice if this were more easily customizable.
+;;
+;; * Add buttons to the customizers the bring up lists of available
+;;   filters, sorters, and groupers
 
 
 ;; list-buffers is arcane.  On the other hand, it does precisely what
@@ -184,16 +187,27 @@
 (defgroup magic-buffer-list nil
   "XXX")
 
+(defcustom magic-buffer-list-view-defaults
+  `(:filter
+    (,#'magic-buffer-list-view-filter-system-buffers
+     ,#'magic-buffer-list-view-filter-most-star-buffers)
+    :sorter ,#'magic-buffer-list-view-sort-mru
+    :grouper ,#'magic-buffer-list-view-group-by-none
+    :format (" " (reeval magic-buffer-list-view-basic-info))
+    :group-format (" " (reeval magic-buffer-list-view-basic-group))
+    :select-next-buffer t)
+  "Property list of view defaults.
+
+This is a property list that specifies default values for view
+properties that are not overridden by specific views in
+`magic-buffer-list-views'.  See `magic-buffer-list-views' for
+information on the meaning of each property."
+  :group 'magic-buffer-list
+  :type '(restricted-sexp
+          :match-alternatives (magic-buffer-list-valid-view-p)))
+
 (defcustom magic-buffer-list-views
-  `((t
-     :filter (,#'magic-buffer-list-view-filter-system-buffers
-              ,#'magic-buffer-list-view-filter-most-star-buffers)
-     :sorter ,#'magic-buffer-list-view-sort-mru
-     :grouper ,#'magic-buffer-list-view-group-by-none
-     :format (" " (reeval magic-buffer-list-view-basic-info))
-     :group-format (" " (reeval magic-buffer-list-view-basic-group))
-     :select-next-buffer t)
-    (group-by-major-mode
+  `((group-by-major-mode
      :grouper ,#'magic-buffer-list-view-group-by-major-mode
      :format (" "
               (reeval magic-buffer-list-view-basic-info)
@@ -218,11 +232,10 @@
   "List of available buffer list views.
 
 This is an alist, where each key should be either a symbol naming the
-view, or the value t to indicate default view values.  The value of
-each element should be a property list, specifying how to build and
-format each view.  If a view lacks a particular property, it will
-inherit the value of that property from the view named t.  The
-available properties are:
+view.  The value of each element should be a property list, specifying
+how to build and format each view.  If a view lacks a particular
+property, it will inherit the value of that property from
+`magic-buffer-list-view-defaults'.  The available properties are:
 
 * :filter - Specifies either a function or a list of functions to use
   as filters for the buffer list before sorting or grouping it.
@@ -355,22 +368,44 @@ to the current level.  Use
 '(reeval magic-buffer-list-view-basic-group)' in a group format spec
 to insert this information.")
 
+(defun magic-buffer-list-valid-view-p (view-plist
+                                       &optional return-error)
+  "Predicate for basic validity checking of a view.  With one
+argument, it behaves like a predicate should.  If return-error is t,
+then this returns a string describing what's wrong with view-plist, or
+nil if nothing is wrong with it."
+  (let* ((properties '(:filter :sorter :grouper :format 
+                               :group-format :select-next-buffer))
+         (result
+          (catch 'result
+            (unless (listp view-plist)
+              (throw 'result "View must be a list"))
+            (unless (evenp (length view-plist))
+              (throw 'result
+                     (concat "View isn't a property list"
+                             " (it's length must be even)")))
+            (do ((plist view-plist (cddr plist)))
+                ((null plist)
+                 nil)
+              (unless (memq (car plist) properties)
+                (throw 'result
+                       (format "View contains unknown property %S"
+                               (car plist))))))))
+    (if return-error
+        result
+      (if (stringp result)
+          nil
+        t))))
+
 (defun magic-buffer-list-valid-views-p (views)
   "Predicate for basic validity checking of a views list."
-  (let ((properties '(:filter :sorter :grouper :format :group-format
-                              :select-next-buffer)))
     (and (listp views)
          (every (lambda (v) (and (listp v)
                                  (not (null v))
                                  (symbolp (car v))))
                 views)
-         (every (lambda (v)
-                  (do ((plist (cdr v) (cddr plist)))
-                      ((or (null plist)
-                           (null (cdr plist))
-                           (not (memq (car plist) properties)))
-                       (null plist))))
-                views))))
+         (every #'magic-buffer-list-valid-view-p
+                (mapcar #'cdr views))))
 
 (defun magic-buffer-list-view-filter-system-buffers (buffers)
   "Buffer list filter that eliminates system buffers.  This filter
@@ -483,7 +518,12 @@ then the buffer after select-buffer is selected instead.  Once this is
 done building the view, it pops up the list.  If the list is already
 visible, this resizes it to the new appropriate size."
   (unless (magic-buffer-list-valid-views-p magic-buffer-list-views)
-    (error "The value of magic-buffer-list-views is malformed"))
+    (error "magic-buffer-list-views is malformed"))
+  (let ((err (magic-buffer-list-valid-view-p
+              magic-buffer-list-view-defaults t)))
+    (if err
+        (error "magic-buffer-list-view-defaults is malformed: %s"
+               err)))
   (let ((buffer (get-buffer-create magic-buffer-list-buffer-name)))
     (with-current-buffer buffer
       ;; Maybe switch modes.  This needs to be done early and once so
@@ -499,7 +539,7 @@ visible, this resizes it to the new appropriate size."
              (view
               (cdr-safe (assq view-name magic-buffer-list-views)))
              (default-view
-               (cdr-safe (assq t magic-buffer-list-views))))
+               magic-buffer-list-view-defaults))
         (if (null view)
             (error "Unknown view: %s" view-name))
         ;; Get the view properties
