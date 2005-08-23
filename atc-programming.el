@@ -79,5 +79,16 @@
 (atc:add-mode-features 'LaTeX-mode-hook
                        '(autofill flyspell-full
                                   latex-bindings latex-faces))
+
+;;; Fix flyspell
+
+;; Flyspell has major issues when replaying keyboard macros.  I don't
+;; know if this fix will correctly check all changes made by keyboard
+;; macros (I think it will), but it's well worth it
+(defadvice flyspell-post-command-hook (around flyspell-in-macros-bug
+                                       activate)
+  (unless executing-kbd-macro
+    ad-do-it))
+
 ;; flyspell only knows about tex-mode by default
 ;(put 'latex-mode 'flyspell-mode-predicate 'tex-mode-flyspell-verify)
