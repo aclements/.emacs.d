@@ -80,4 +80,4 @@
                        '(autofill flyspell-full
                                   latex-bindings latex-faces))
 ;; flyspell only knows about tex-mode by default
-(put 'latex-mode 'flyspell-mode-predicate 'tex-mode-flyspell-verify)
+;(put 'latex-mode 'flyspell-mode-predicate 'tex-mode-flyspell-verify)
