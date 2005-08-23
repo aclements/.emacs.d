@@ -182,6 +182,12 @@
 ;; numbers of buffers, without losing its usefulness when used for
 ;; small numbers of buffers.
 
+;; Recommended usage
+
+;; Bind C-x C-b to magic-buffer-list.  Bind M-r to
+;; magic-buffer-list-and-select-next and M-R to
+;; magic-buffer-list-and-select-prev.
+
 ;;; Customization:
 
 (defgroup magic-buffer-list nil
@@ -194,8 +200,7 @@
     :sorter ,#'magic-buffer-list-view-sort-mru
     :grouper ,#'magic-buffer-list-view-group-by-none
     :format (" " (reeval magic-buffer-list-view-basic-info))
-    :group-format (" " (reeval magic-buffer-list-view-basic-group))
-    :select-next-buffer t)
+    :group-format (" " (reeval magic-buffer-list-view-basic-group)))
   "Property list of view defaults.
 
 This is a property list that specifies default values for view
@@ -265,10 +270,6 @@ property, it will inherit the value of that property from
 * :group-format - Specifies the format of group lines in the buffer
   list.  See `magic-buffer-list-format-group-row' for information
   about format specs for groups.
-* :select-next-buffer - When the buffer list is first popped up via
-  `magic-buffer-list', if this view is selected and this property is
-  t, then immediately select the next buffer, instead of the current
-  one.
 
 The process for showing a view is to get the unadulterated buffer
 list, filter it, sort it, and then group it.  This produces the
@@ -322,17 +323,34 @@ when it's stable enough to not need constant reloading."
 (defconst magic-buffer-list-buffer-name " *Magic Buffer List*"
   "Buffer name of the magic-buffer-list list buffer")
 
+;;
+;; Interactive entry points
+;;
+
 (defun magic-buffer-list ()
   "Pop up the magic buffer list in the previously used view.  If this
 is the first time the buffer list is being popped up, the first view
-from `magic-buffer-list-view-sequence' is used.  Depending on the
-value of the view's :select-next-buffer property, either the current
-buffer or the next buffer is selected."
+from `magic-buffer-list-view-sequence' is used.  The current buffer is
+selected."
   (interactive)
-  (magic-buffer-list-show-view nil (current-buffer) t)
+  (magic-buffer-list-show-view nil (current-buffer))
   ;; XXX Do this better
   (message
    "RET selects buffer, q buries list, p pivots, TAB jumps to next group"))
+
+(defun magic-buffer-list-and-select-next ()
+  "XXX"
+  (interactive)
+  (if (not (boundp 'magic-buffer-list-this-is))
+      (magic-buffer-list))
+  (magic-buffer-list-forward-buffer 1 t))
+
+(defun magic-buffer-list-and-select-prev ()
+  "XXX"
+  (interactive)
+  (if (not (boundp 'magic-buffer-list-this-is))
+      (magic-buffer-list))
+  (magic-buffer-list-forward-buffer -1 t))
 
 ;;
 ;; Basic formats
@@ -579,8 +597,8 @@ This tries to make the resulting string length at most 4 characters."
 argument, it behaves like a predicate should.  If return-error is t,
 then this returns a string describing what's wrong with view-plist, or
 nil if nothing is wrong with it."
-  (let* ((properties '(:filter :sorter :grouper :format 
-                               :group-format :select-next-buffer))
+  (let* ((properties '(:filter :sorter :grouper :format
+                               :group-format))
          (result
           (catch 'result
             (unless (listp view-plist)
@@ -613,18 +631,15 @@ nil if nothing is wrong with it."
                 (mapcar #'cdr views))))
 
 (defun magic-buffer-list-show-view (view-name &optional
-                                              select-buffer
-                                              initial-appearance)
+                                              select-buffer)
   "Show a magic buffer list view.  view-name must either by nil, or
 must specify one of the views in `magic-buffer-list-views'.  If
 view-name is nil, the previously used view type is reused, or, if
 there is no previously used view type, the first type in
 `magic-buffer-list-view-sequence' is used.  select-buffer, if
-provided, must be the buffer to select once the view is built.  If the
-view specifies :select-next-buffer and initial-appearance is true,
-then the buffer after select-buffer is selected instead.  Once this is
-done building the view, it pops up the list.  If the list is already
-visible, this resizes it to the new appropriate size."
+provided, must be the buffer to select once the view is built.  Once
+this is done building the view, it pops up the list.  If the list is
+already visible, this resizes it to the new appropriate size."
   (unless (magic-buffer-list-valid-views-p magic-buffer-list-views)
     (error "magic-buffer-list-views is malformed"))
   (let ((err (magic-buffer-list-valid-view-p
@@ -638,6 +653,9 @@ visible, this resizes it to the new appropriate size."
       ;; it doesn't clobber buffer-local variables.
       (if (not (eq major-mode 'magic-buffer-list-mode))
           (magic-buffer-list-mode))
+      ;; Let the world know this is a magic buffer list
+      (make-local-variable 'magic-buffer-list-this-is)
+      (setq magic-buffer-list-this-is t)
       ;; Get the view
       (let* ((view-name (or view-name
                             (if (boundp
@@ -660,8 +678,7 @@ visible, this resizes it to the new appropriate size."
                 (sorter (view-get :sorter))
                 (grouper (view-get :grouper))
                 (buffer-format (view-get :format))
-                (group-format (view-get :group-format))
-                (select-next-buffer (view-get :select-next-buffer)))
+                (group-format (view-get :group-format)))
             ;; Get the buffers, filter them, sort them, and group them
             (let* ((buffers (buffer-list))
                    (filtered-buffers
@@ -686,9 +703,7 @@ visible, this resizes it to the new appropriate size."
                                         buffer-format
                                         group-format))
             ;; Point to the appropriate buffer
-            (magic-buffer-list-point-to-buffer select-buffer)
-            (if (and initial-appearance select-next-buffer)
-                (magic-buffer-list-int-next-buffer))))
+            (magic-buffer-list-point-to-buffer select-buffer)))
         ;; Record the current view
         (make-local-variable 'magic-buffer-list-current-view)
         (setq magic-buffer-list-current-view view-name)))
@@ -1073,8 +1088,23 @@ In the future, this may employ optimizations such as caching."
           (switch-to-buffer buffer t)))))
 
 ;;
-;; Line properties (overlays)
+;; Line properties (overlays) and motion
 ;;
+
+(defun magic-buffer-list-get-prop (prop &optional pt)
+  (let ((overlays (overlays-at (or pt (point))))
+        (symbol (intern (concat "magic-buffer-list-"
+                                (symbol-name prop)))))
+    (when overlays
+      ;; XXX Deal with multiple overlays
+      (overlay-get (car overlays) symbol))))
+
+(defun magic-buffer-list-put-prop (start end prop value)
+  ;; XXX Search for existing overlay?
+  (let ((overlay (make-overlay start end))
+        (symbol (intern (concat "magic-buffer-list-"
+                                (symbol-name prop)))))
+    (overlay-put overlay symbol value)))
 
 (defun magic-buffer-list-point-to-buffer (buffer)
   (goto-char (point-min))
@@ -1092,20 +1122,38 @@ In the future, this may employ optimizations such as caching."
         nil)
     t))
 
-(defun magic-buffer-list-get-prop (prop &optional pt)
-  (let ((overlays (overlays-at (or pt (point))))
-        (symbol (intern (concat "magic-buffer-list-"
-                                (symbol-name prop)))))
-    (when overlays
-      ;; XXX Deal with multiple overlays
-      (overlay-get (car overlays) symbol))))
-
-(defun magic-buffer-list-put-prop (start end prop value)
-  ;; XXX Search for existing overlay?
-  (let ((overlay (make-overlay start end))
-        (symbol (intern (concat "magic-buffer-list-"
-                                (symbol-name prop)))))
-    (overlay-put overlay symbol value)))
+(defun magic-buffer-list-forward-buffer (&optional count cycle)
+  (beginning-of-line)
+  (let ((here (point))
+        (failed
+         ;; XXX Whoo, boy.  Return to this when I'm not falling
+         ;; asleep.
+         (catch 'hit-top-or-bottom
+           (while (/= count 0)
+             (catch 'moved-one
+               (let ((motion-start (line-beginning-position)))
+                 (while t
+                   (let ((pre-motion (line-beginning-position)))
+                     (forward-line (signum count))
+                     (if (= pre-motion (line-beginning-position))
+                         (if (not cycle)
+                             (throw 'hit-top-or-bottom t)
+                           (cond ((< count 0)
+                                  (end-of-buffer))
+                                 ((> count 0)
+                                  (beginning-of-buffer)))
+                           (beginning-of-line)))
+                     (when (magic-buffer-list-get-prop 'buffer)
+                       (throw 'moved-one t))
+                     (when (= motion-start (line-beginning-position))
+                       (throw 'hit-top-or-bottom t))))))
+             (setq count (- count (signum count))))
+           nil)))
+    (if failed
+        (progn
+          (goto-char here)
+          nil)
+      (magic-buffer-list-get-prop 'buffer))))
 
 ;;
 ;; Buffer flags
@@ -1268,31 +1316,13 @@ In the future, this may employ optimizations such as caching."
         (if (eobp)
             (goto-char here))))))
 
-(defun magic-buffer-list-int-next-buffer ()
-  (interactive)
-  (let ((here (point)))
-    (forward-line)
-    (while (and (null (magic-buffer-list-get-prop 'buffer))
-                (not (eobp)))
-      (forward-line))
-    (if (eobp)
-        (progn
-          (goto-char here)
-          nil)
-      (magic-buffer-list-get-prop 'buffer))))
+(defun magic-buffer-list-int-next-buffer (&optional count)
+  (interactive "p")
+  (magic-buffer-list-forward-buffer (or count 1)))
 
-(defun magic-buffer-list-int-prev-buffer ()
-  (interactive)
-  (let ((here (point)))
-    (forward-line -1)
-    (while (and (null (magic-buffer-list-get-prop 'buffer))
-                (not (bobp)))
-      (forward-line -1))
-    (if (bobp)
-        (progn
-          (goto-char here)
-          nil)
-      (magic-buffer-list-get-prop 'buffer))))
+(defun magic-buffer-list-int-prev-buffer (&optional count)
+  (interactive "p")
+  (magic-buffer-list-forward-buffer (- (or count 1))))
 
 (defun magic-buffer-list-int-mark-save ()
   (interactive)

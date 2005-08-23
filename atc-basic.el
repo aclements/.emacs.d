@@ -152,7 +152,13 @@ really slow things down."
   (global-set-key "\C-c\g"   (function goto-line))
   (global-set-key "\C-x\C-k" (function kill-buffer))
   (if (require 'magic-buffer-list nil t)
-      (global-set-key "\C-x\C-b" (function magic-buffer-list))
+      ;; XXX Use autoload voodoo instead
+      (progn
+        (global-set-key "\C-x\C-b" (function magic-buffer-list))
+        (global-set-key "\M-r"
+                        (function magic-buffer-list-and-select-next))
+        (global-set-key "\M-R"
+                        (function magic-buffer-list-and-select-prev)))
     (global-set-key "\C-x\C-b" (function electric-buffer-list)))
   ;; The following is because some terminals use C-h and some use C-?
   ;; for backspace.  Emacs by default only understands C-?.  I'm sure
