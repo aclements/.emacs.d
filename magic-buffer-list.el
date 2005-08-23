@@ -335,7 +335,7 @@ buffer or the next buffer is selected."
    "RET selects buffer, q buries list, p pivots, TAB jumps to next group"))
 
 ;;
-;; Views
+;; Basic formats
 ;;
 
 (defvar magic-buffer-list-view-basic-flags
@@ -368,44 +368,9 @@ to the current level.  Use
 '(reeval magic-buffer-list-view-basic-group)' in a group format spec
 to insert this information.")
 
-(defun magic-buffer-list-valid-view-p (view-plist
-                                       &optional return-error)
-  "Predicate for basic validity checking of a view.  With one
-argument, it behaves like a predicate should.  If return-error is t,
-then this returns a string describing what's wrong with view-plist, or
-nil if nothing is wrong with it."
-  (let* ((properties '(:filter :sorter :grouper :format 
-                               :group-format :select-next-buffer))
-         (result
-          (catch 'result
-            (unless (listp view-plist)
-              (throw 'result "View must be a list"))
-            (unless (evenp (length view-plist))
-              (throw 'result
-                     (concat "View isn't a property list"
-                             " (it's length must be even)")))
-            (do ((plist view-plist (cddr plist)))
-                ((null plist)
-                 nil)
-              (unless (memq (car plist) properties)
-                (throw 'result
-                       (format "View contains unknown property %S"
-                               (car plist))))))))
-    (if return-error
-        result
-      (if (stringp result)
-          nil
-        t))))
-
-(defun magic-buffer-list-valid-views-p (views)
-  "Predicate for basic validity checking of a views list."
-    (and (listp views)
-         (every (lambda (v) (and (listp v)
-                                 (not (null v))
-                                 (symbolp (car v))))
-                views)
-         (every #'magic-buffer-list-valid-view-p
-                (mapcar #'cdr views))))
+;;
+;; Filters
+;;
 
 (defun magic-buffer-list-view-filter-system-buffers (buffers)
   "Buffer list filter that eliminates system buffers.  This filter
@@ -427,6 +392,10 @@ the scratch buffer."
                       (not (string= name "*scratch*")))))
              buffers))
 
+;;
+;; Sorters
+;;
+
 (defun magic-buffer-list-view-sort-mru (buffers)
   "Buffer list sorter that sorts according to MRU.  This is the way
 most buffer lists are sorted (such as `list-buffers')."
@@ -440,6 +409,10 @@ name.  Comparisons are done using `string<'."
   (sort buffers
         (lambda (a b)
           (string< (buffer-name a) (buffer-name b)))))
+
+;;
+;; Groupers
+;;
 
 (defun magic-buffer-list-view-group-by-none (buffers)
   "Buffer list grouper that does no grouping.  This is essentially an
@@ -503,6 +476,141 @@ everything else."
      `((group (:title "(no directory)")
               ,@(mapcar (lambda (buffer) `(buffer ,buffer))
                         (reverse nondirectoried)))))))
+
+;;
+;; Getters
+;;
+
+(defun magic-buffer-list-getter-name ()
+  "Get the buffer name"
+  (buffer-name))
+(defun magic-buffer-list-getter-filename ()
+  "Get the abbreviated file name (including directory), or nil if no
+filename"
+  (let ((filename (buffer-file-name buffer)))
+    (when filename (abbreviate-file-name filename))))
+(defun magic-buffer-list-getter-filename-dimmed ()
+  "Get the abbreviated file name, and dim the directory component"
+  (let ((directory (magic-buffer-list-get 'directory))
+        (filename (magic-buffer-list-get 'filename-sans-directory)))
+    (when (and directory filename)
+      ;; XXX Do the face right
+      (concat (propertize directory 'face '((:foreground "gray")))
+              filename))))
+(defun magic-buffer-list-getter-directory ()
+  "Get the directory name, or nil if no directory"
+  (let ((filename (magic-buffer-list-get 'filename buffer)))
+    (when filename (file-name-directory filename))))
+(defun magic-buffer-list-getter-filename-sans-directory ()
+  "Get the filename without directory, or nil if no filename"
+  (let ((filename (magic-buffer-list-get 'filename buffer)))
+    (when filename (file-name-nondirectory filename))))
+(defun magic-buffer-list-getter-major-mode ()
+  "Get the major mode"
+  mode-name)
+(defun magic-buffer-list-getter-size ()
+  "Get the buffer size, as a number"
+  (buffer-size))
+(defun magic-buffer-list-getter-size-string ()
+  "Get the buffer size, pretty-printed as a string"
+  (magic-buffer-list-pp-size (magic-buffer-list-get 'size)))
+(defun magic-buffer-list-getter-display-time ()
+  "Get the buffer's last display time, as a float, or 0 if it has
+never been displayed"
+  (if buffer-display-time
+      (float buffer-display-time)
+    0))
+(defun magic-buffer-list-getter-modified ()
+  "Get whether or not the buffer is modified, as a boolean"
+  (buffer-modified-p))
+(defun magic-buffer-list-getter-read-only ()
+  "Get whether or not the buffer is read-only, as a boolean"
+  buffer-read-only)
+(defun magic-buffer-list-getter-visible ()
+  "Get whether or not the buffer is visible in any window, as a
+boolean"
+  (not (null (get-buffer-window (current-buffer) t))))
+
+;;
+;; Pretty-printers for getters
+;;
+
+(defun magic-buffer-list-pp-size (size)
+  "Pretty-print size as a possibly suffixed floating point number.
+This tries to make the resulting string length at most 4 characters."
+  ;; XXX Yeah, I know Emacs can't represent sizes bigger than 134M
+  (let* ((suffixes (list "B" "K" "M" "G" "T" "P"))
+         (last-suffix (car (last suffixes)))
+         (divisor 1000.0)
+         (power 0))
+    (catch 'done
+      (dolist (suffix suffixes)
+        (let ((new-size (/ size (expt divisor power))))
+          (cond ((and (< new-size 10) (= power 0))
+                 ;; Size is small, but shouldn't be printed as a
+                 ;; floating point
+                 (throw 'done
+                        (concat (number-to-string (floor new-size))
+                                suffix)))
+                ((< new-size 10)
+                 ;; Size the small enough to fit one decimal place
+                 (throw 'done
+                        (concat (number-to-string
+                                 (/ (ffloor (* new-size 10)) 10))
+                                suffix)))
+                ((or (< new-size 1000)
+                     (equal suffix last-suffix))
+                 ;; Size is small enough to fit three digits in (or
+                 ;; we're out of suffixes)
+                 (throw 'done (concat (number-to-string
+                                       (floor new-size))
+                                      suffix)))
+                (t
+                 ;; Try the next power
+                 (incf power))))))))
+
+;;
+;; View system
+;;
+
+(defun magic-buffer-list-valid-view-p (view-plist
+                                       &optional return-error)
+  "Predicate for basic validity checking of a view.  With one
+argument, it behaves like a predicate should.  If return-error is t,
+then this returns a string describing what's wrong with view-plist, or
+nil if nothing is wrong with it."
+  (let* ((properties '(:filter :sorter :grouper :format 
+                               :group-format :select-next-buffer))
+         (result
+          (catch 'result
+            (unless (listp view-plist)
+              (throw 'result "View must be a list"))
+            (unless (evenp (length view-plist))
+              (throw 'result
+                     (concat "View isn't a property list"
+                             " (it's length must be even)")))
+            (do ((plist view-plist (cddr plist)))
+                ((null plist)
+                 nil)
+              (unless (memq (car plist) properties)
+                (throw 'result
+                       (format "View contains unknown property %S"
+                               (car plist))))))))
+    (if return-error
+        result
+      (if (stringp result)
+          nil
+        t))))
+
+(defun magic-buffer-list-valid-views-p (views)
+  "Predicate for basic validity checking of a views list."
+    (and (listp views)
+         (every (lambda (v) (and (listp v)
+                                 (not (null v))
+                                 (symbolp (car v))))
+                views)
+         (every #'magic-buffer-list-valid-view-p
+                (mapcar #'cdr views))))
 
 (defun magic-buffer-list-show-view (view-name &optional
                                               select-buffer
@@ -592,8 +700,15 @@ visible, this resizes it to the new appropriate size."
     (magic-buffer-list-update-preview t)))
 
 ;;
-;; Getters
+;; Getter system
 ;;
+
+(defvar magic-buffer-list-getter-prefix 'magic-buffer-list-getter
+  "The getter system support multiple, independent namespaces of
+getters.  This specifies the prefix of the function names that
+comprise the current namespace.  This is used, for example, by the
+group formatter to create a getter namespace independent of the one
+that only makes sense for buffers.")
 
 (defun magic-buffer-list-get (name &optional buffer)
   "Get the value of the getter specified by name.  If buffer is
@@ -621,101 +736,6 @@ In the future, this may employ optimizations such as caching."
           (funcall getter))
       (error "No such getter: %s" name))))
 
-(defvar magic-buffer-list-getter-prefix 'magic-buffer-list-getter
-  "The getter system support multiple, independent namespaces of
-getters.  This specifies the prefix of the function names that
-comprise the current namespace.  This is used, for example, by the
-group formatter to create a getter namespace independent of the one
-that only makes sense for buffers.")
-
-(defun magic-buffer-list-getter-name ()
-  "Get the buffer name"
-  (buffer-name))
-(defun magic-buffer-list-getter-filename ()
-  "Get the abbreviated file name (including directory), or nil if no
-filename"
-  (let ((filename (buffer-file-name buffer)))
-    (when filename (abbreviate-file-name filename))))
-(defun magic-buffer-list-getter-filename-dimmed ()
-  "Get the abbreviated file name, and dim the directory component"
-  (let ((directory (magic-buffer-list-get 'directory))
-        (filename (magic-buffer-list-get 'filename-sans-directory)))
-    (when (and directory filename)
-      ;; XXX Do the face right
-      (concat (propertize directory 'face '((:foreground "gray")))
-              filename))))
-(defun magic-buffer-list-getter-directory ()
-  "Get the directory name, or nil if no directory"
-  (let ((filename (magic-buffer-list-get 'filename buffer)))
-    (when filename (file-name-directory filename))))
-(defun magic-buffer-list-getter-filename-sans-directory ()
-  "Get the filename without directory, or nil if no filename"
-  (let ((filename (magic-buffer-list-get 'filename buffer)))
-    (when filename (file-name-nondirectory filename))))
-(defun magic-buffer-list-getter-major-mode ()
-  "Get the major mode"
-  mode-name)
-(defun magic-buffer-list-getter-size ()
-  "Get the buffer size, as a number"
-  (buffer-size))
-(defun magic-buffer-list-getter-size-string ()
-  "Get the buffer size, pretty-printed as a string"
-  (magic-buffer-list-sizify (magic-buffer-list-get 'size)))
-(defun magic-buffer-list-getter-display-time ()
-  "Get the buffer's last display time, as a float, or 0 if it has
-never been displayed"
-  (if buffer-display-time
-      (float buffer-display-time)
-    0))
-(defun magic-buffer-list-getter-modified ()
-  "Get whether or not the buffer is modified, as a boolean"
-  (buffer-modified-p))
-(defun magic-buffer-list-getter-read-only ()
-  "Get whether or not the buffer is read-only, as a boolean"
-  buffer-read-only)
-(defun magic-buffer-list-getter-visible ()
-  "Get whether or not the buffer is visible in any window, as a
-boolean"
-  (not (null (get-buffer-window (current-buffer) t))))
-
-;;
-;; Getter utilities
-;;
-
-(defun magic-buffer-list-sizify (size)
-  "Pretty-print size as a possibly suffixed floating point number.
-This tries to make the resulting string length at most 4 characters."
-  ;; XXX Yeah, I know Emacs can't represent sizes bigger than 134M
-  (let* ((suffixes (list "B" "K" "M" "G" "T" "P"))
-         (last-suffix (car (last suffixes)))
-         (divisor 1000.0)
-         (power 0))
-    (catch 'done
-      (dolist (suffix suffixes)
-        (let ((new-size (/ size (expt divisor power))))
-          (cond ((and (< new-size 10) (= power 0))
-                 ;; Size is small, but shouldn't be printed as a
-                 ;; floating point
-                 (throw 'done
-                        (concat (number-to-string (floor new-size))
-                                suffix)))
-                ((< new-size 10)
-                 ;; Size the small enough to fit one decimal place
-                 (throw 'done
-                        (concat (number-to-string
-                                 (/ (ffloor (* new-size 10)) 10))
-                                suffix)))
-                ((or (< new-size 1000)
-                     (equal suffix last-suffix))
-                 ;; Size is small enough to fit three digits in (or
-                 ;; we're out of suffixes)
-                 (throw 'done (concat (number-to-string
-                                       (floor new-size))
-                                      suffix)))
-                (t
-                 ;; Try the next power
-                 (incf power))))))))
-
 ;;
 ;; Line specs
 ;;
@@ -726,7 +746,7 @@ This tries to make the resulting string length at most 4 characters."
          (magic-buffer-list-getter-indent ()
             (make-string indent-level ? )))
     (with-current-buffer buffer
-      (magic-buffer-list-format-internal
+      (magic-buffer-list-format-eval
        (cons 'concat format-spec) t))))
 
 (defun magic-buffer-list-format-group-row (format-spec group-plist
@@ -738,7 +758,7 @@ This tries to make the resulting string length at most 4 characters."
             (plist-get group-plist :title)))
     (let ((magic-buffer-list-getter-prefix
            'magic-buffer-list-group-getter))
-      (magic-buffer-list-format-internal
+      (magic-buffer-list-format-eval
        (cons 'concat format-spec) t))))
 
 (defun magic-buffer-list-string-repeat (string repeat)
@@ -772,16 +792,24 @@ This tries to make the resulting string length at most 4 characters."
                (right (concat trim
                               (substring str (- trim-width))))))))))
 
-(defun magic-buffer-list-format-internal (elt &optional to-string)
-  (let ((data (magic-buffer-list-format-internal-eval elt)))
+(defun magic-buffer-list-format-eval (elt &optional to-string)
+  (let ((data (magic-buffer-list-format-eval-internal elt)))
     (if to-string
         (mapconcat
          (lambda (x) (if x (format "%s" x)))
-         (magic-buffer-list-format-internal-flatten (list data))
+         (magic-buffer-list-format-eval-flatten (list data))
          "")
       data)))
 
-(defun magic-buffer-list-format-internal-eval (elt)
+(defun magic-buffer-list-format-eval-flatten (data)
+  (reduce (lambda (l r)
+            (if (consp l)
+                (append (magic-buffer-list-format-eval-flatten l)
+                        r)
+              (cons l r)))
+          data :from-end t :initial-value ()))
+
+(defun magic-buffer-list-format-eval-internal (elt)
   ;; XXX Note that current window matters for some alignment
   ;; operations
   (cond ((stringp elt)
@@ -795,7 +823,7 @@ This tries to make the resulting string length at most 4 characters."
                 (width (if (minusp width-spec)
                            (+ (window-width) width-spec)
                          width-spec))
-                (str (magic-buffer-list-format-internal (cadr elt) t))
+                (str (magic-buffer-list-format-eval (cadr elt) t))
                 (plist (cddr elt))
                 (align (or (plist-get plist :align) 'left))
                 (trim (or (plist-get plist :trim) ""))
@@ -805,34 +833,26 @@ This tries to make the resulting string length at most 4 characters."
                                           align trim trim-align
                                           padding)))
         ((eq (car-safe elt) 'concat)
-         (mapcar #'magic-buffer-list-format-internal (cdr elt)))
+         (mapcar #'magic-buffer-list-format-eval (cdr elt)))
         ((eq (car-safe elt) 'repeat)
          (let ((times
-                (magic-buffer-list-format-internal (cadr elt)))
+                (magic-buffer-list-format-eval (cadr elt)))
                (value
-                (magic-buffer-list-format-internal (caddr elt))))
+                (magic-buffer-list-format-eval (caddr elt))))
            (make-list times value)))
         ((eq (car-safe elt) 'if)
          (let ((condition (cadr elt))
                (consequent (caddr elt))
                (alternate (car-safe (cdddr elt))))
-           (if (magic-buffer-list-format-internal-eval condition)
-               (magic-buffer-list-format-internal-eval consequent)
-             (magic-buffer-list-format-internal-eval alternate))))
+           (if (magic-buffer-list-format-eval condition)
+               (magic-buffer-list-format-eval consequent)
+             (magic-buffer-list-format-eval alternate))))
         ((eq (car-safe elt) 'eval)
          (eval (cadr elt)))
         ((eq (car-safe elt) 'reeval)
          (let ((value (eval (cadr elt))))
-           (magic-buffer-list-format-internal value)))
+           (magic-buffer-list-format-eval value)))
         (t (error "Unknown format spec %s" elt))))
-
-(defun magic-buffer-list-format-internal-flatten (data)
-  (reduce (lambda (l r)
-            (if (consp l)
-                (append (magic-buffer-list-format-internal-flatten l)
-                        r)
-              (cons l r)))
-          data :from-end t :initial-value ()))
 
 ;;
 ;; Render specs
@@ -965,7 +985,7 @@ This tries to make the resulting string length at most 4 characters."
       (append new-groups buffers))))
 
 ;;
-;; Frame manipulations
+;; Pop-up frames
 ;;
 
 (defvar magic-buffer-list-pop-up-min-context-height 5)
@@ -1157,7 +1177,7 @@ This tries to make the resulting string length at most 4 characters."
   (let ((map (make-sparse-keymap)))
     (define-key map "q"    #'magic-buffer-list-int-expunge-and-quit)
     (define-key map "\C-g" #'magic-buffer-list-int-expunge-and-quit)
-    (define-key map "\C-m" #'magic-buffer-list-int-selected-goto)
+    (define-key map "\C-m" #'magic-buffer-list-int-goto-selected)
     (define-key map "p"    #'magic-buffer-list-int-pivot)
     (define-key map "\C-i" #'magic-buffer-list-int-next-group)
     (define-key map [up]   #'magic-buffer-list-int-prev-buffer)
@@ -1200,7 +1220,7 @@ This tries to make the resulting string length at most 4 characters."
   (magic-buffer-list-int-expunge)
   (magic-buffer-list-int-quit))
 
-(defun magic-buffer-list-int-selected-goto ()
+(defun magic-buffer-list-int-goto-selected ()
   (interactive)
   (let ((buffer (magic-buffer-list-get-prop 'buffer)))
     (if (null buffer)
@@ -1216,7 +1236,6 @@ This tries to make the resulting string length at most 4 characters."
     (if (null buffer)
         (setq buffer (magic-buffer-list-int-next-buffer)))
     (if (null buffer)
-        ;; Fight mind games with mind games
         (message "You can't do that in horizontal mode"))
     (let ((next-view
            (car (or (cdr-safe (memq magic-buffer-list-current-view
@@ -1323,5 +1342,9 @@ This tries to make the resulting string length at most 4 characters."
     (magic-buffer-list-show-view magic-buffer-list-current-view
                                  (if (buffer-live-p buffer)
                                      buffer))))
+
+;;
+;; That's all folks
+;;
 
 (provide 'magic-buffer-list)
