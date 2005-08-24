@@ -159,6 +159,8 @@
 ;;
 ;; * Add buttons to the customizers the bring up lists of available
 ;;   filters, sorters, and groupers
+;;
+;; * Add a context menu with buffer actions
 
 
 ;; list-buffers is arcane.  On the other hand, it does precisely what
@@ -217,7 +219,7 @@ information on the meaning of each property."
      :format (" "
               (reeval magic-buffer-list-view-basic-info)
               " "
-              (-39 filename-dimmed :align left :trim ".."
+              (-37 filename-dimmed :align left :trim ".."
                    :trim-align right)))
     (group-by-directory
      :grouper ,#'magic-buffer-list-view-group-by-directory
@@ -336,7 +338,7 @@ selected."
   (magic-buffer-list-show-view nil (current-buffer))
   ;; XXX Do this better
   (message
-   "RET selects buffer, q buries list, p pivots, TAB jumps to next group"))
+   "RET selects buffer, q buries list, TAB changes view, n jumps to next group"))
 
 (defun magic-buffer-list-and-select-next ()
   "XXX"
@@ -1122,38 +1124,45 @@ In the future, this may employ optimizations such as caching."
         nil)
     t))
 
-(defun magic-buffer-list-forward-buffer (&optional count cycle)
+(defun magic-buffer-list-forward-prop (prop &optional count cycle)
   (beginning-of-line)
-  (let ((here (point))
-        (failed
-         ;; XXX Whoo, boy.  Return to this when I'm not falling
-         ;; asleep.
-         (catch 'hit-top-or-bottom
-           (while (/= count 0)
-             (catch 'moved-one
-               (let ((motion-start (line-beginning-position)))
-                 (while t
-                   (let ((pre-motion (line-beginning-position)))
-                     (forward-line (signum count))
-                     (if (= pre-motion (line-beginning-position))
-                         (if (not cycle)
-                             (throw 'hit-top-or-bottom t)
-                           (cond ((< count 0)
-                                  (end-of-buffer))
-                                 ((> count 0)
-                                  (beginning-of-buffer)))
-                           (beginning-of-line)))
-                     (when (magic-buffer-list-get-prop 'buffer)
-                       (throw 'moved-one t))
-                     (when (= motion-start (line-beginning-position))
-                       (throw 'hit-top-or-bottom t))))))
-             (setq count (- count (signum count))))
-           nil)))
+  (let* ((count (or count 1))
+         (here (point))
+         (failed
+          ;; XXX Whoo, boy.  Return to this when I'm not falling
+          ;; asleep.
+          (catch 'hit-top-or-bottom
+            (while (/= count 0)
+              (catch 'moved-one
+                (let ((motion-start (line-beginning-position)))
+                  (while t
+                    (let ((pre-motion (line-beginning-position)))
+                      (forward-line (signum count))
+                      (if (= pre-motion (line-beginning-position))
+                          (if (not cycle)
+                              (throw 'hit-top-or-bottom t)
+                            (cond ((< count 0)
+                                   (end-of-buffer))
+                                  ((> count 0)
+                                   (beginning-of-buffer)))
+                            (beginning-of-line)))
+                      (when (magic-buffer-list-get-prop prop)
+                        (throw 'moved-one t))
+                      (when (= motion-start (line-beginning-position))
+                        (throw 'hit-top-or-bottom t))))))
+              (setq count (- count (signum count))))
+            nil)))
     (if failed
         (progn
           (goto-char here)
           nil)
-      (magic-buffer-list-get-prop 'buffer))))
+      (magic-buffer-list-get-prop prop))))
+
+(defun magic-buffer-list-forward-buffer (&optional count cycle)
+  (magic-buffer-list-forward-prop 'buffer count cycle))
+
+(defun magic-buffer-list-forward-group (&optional count cycle)
+  (magic-buffer-list-forward-prop 'group count cycle))
 
 ;;
 ;; Buffer flags
@@ -1226,8 +1235,11 @@ In the future, this may employ optimizations such as caching."
     (define-key map "q"    #'magic-buffer-list-int-expunge-and-quit)
     (define-key map "\C-g" #'magic-buffer-list-int-expunge-and-quit)
     (define-key map "\C-m" #'magic-buffer-list-int-goto-selected)
-    (define-key map "p"    #'magic-buffer-list-int-pivot)
-    (define-key map "\C-i" #'magic-buffer-list-int-next-group)
+    (define-key map "p"
+      #'magic-buffer-list-int-beginning-of-prev-group)
+    (define-key map "n"
+      #'magic-buffer-list-int-beginning-of-next-group)
+    (define-key map "\C-i" #'magic-buffer-list-int-next-view)
     (define-key map [up]   #'magic-buffer-list-int-prev-buffer)
     (define-key map "\C-p" #'magic-buffer-list-int-prev-buffer)
     (define-key map [down] #'magic-buffer-list-int-next-buffer)
@@ -1278,7 +1290,7 @@ In the future, this may employ optimizations such as caching."
           (select-window window))
         (switch-to-buffer buffer)))))
 
-(defun magic-buffer-list-int-pivot ()
+(defun magic-buffer-list-int-next-view ()
   (interactive)
   (let ((buffer (magic-buffer-list-get-prop 'buffer)))
     (if (null buffer)
@@ -1291,30 +1303,21 @@ In the future, this may employ optimizations such as caching."
                     magic-buffer-list-view-sequence))))
       (magic-buffer-list-show-view next-view buffer))))
 
-(defun magic-buffer-list-int-next-group ()
+(defun magic-buffer-list-int-beginning-of-next-group ()
   (interactive)
   (let ((here (point)))
-    (beginning-of-line)
-    (flet ((skip-groups
-            ()
-            (while (and (magic-buffer-list-get-prop 'group)
-                        (not (eobp)))
-              (forward-line)))
-           (skip-to-group
-            ()
-            (while (and (null (magic-buffer-list-get-prop 'group))
-                        (not (eobp)))
-              (forward-line)))
-           (skip
-            ()
-            (skip-to-group)
-            (skip-groups)))
-      (skip)
-      (when (eobp)
-        (goto-char (point-min))
-        (skip)
-        (if (eobp)
-            (goto-char here))))))
+    (unless (and (magic-buffer-list-forward-group 1 t)
+                 (magic-buffer-list-forward-buffer 1 t))
+      (goto-char here))))
+
+(defun magic-buffer-list-int-beginning-of-prev-group ()
+  (interactive)
+  (let ((here (point)))
+    (unless (and (magic-buffer-list-forward-group -1 t)
+                 (magic-buffer-list-forward-buffer -1 t)
+                 (magic-buffer-list-forward-group -1 t)
+                 (magic-buffer-list-forward-buffer 1 t))
+      (goto-char here))))
 
 (defun magic-buffer-list-int-next-buffer (&optional count)
   (interactive "p")
