@@ -237,13 +237,13 @@ filtered by `c-magic-punctuation-close-brace-danglers'."
            (let ((last-command-char ?\;)
                  (c-cleanup-list (cons 'defun-close-semi
                                        c-cleanup-list)))
-             (c-electric-semi&comma arg)))
+             (call-interactively (function c-electric-semi&comma))))
           ((eq real-syntax-type 'array)
            ;; Insert comma
            (let ((last-command-char ?,)
                  (c-cleanup-list (cons 'list-close-comma
                                        c-cleanup-list)))
-             (c-electric-semi&comma arg))))
+             (call-interactively (function c-electric-semi&comma)))))
     ;; Clean up extra whitespace that may have been inserted after the
     ;; close characters
     (let ((end (point))
@@ -384,7 +384,8 @@ re-indents the region."
         (call-interactively (function c-electric-brace)))
       (when auto-close-brace
         ;; Insert the closing stuff
-        (let ((begin-body-point (point-marker)))
+        (let ((begin-body-point (point-marker))
+              (current-prefix-arg nil))
           (save-excursion
             (if (not embrace)
                 ;; Just put a blank line here
@@ -401,7 +402,6 @@ re-indents the region."
               (goto-char close-brace-point))
             ;; Insert the close brace
             (let ((last-command-char ?})
-                  (current-prefix-arg nil)
                   ;; Inhibit cleanup of empty defuns
                   (c-cleanup-list
                    (remq 'empty-defun-braces c-cleanup-list)))
