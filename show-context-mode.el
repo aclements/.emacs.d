@@ -54,6 +54,7 @@
 ;;   levels (or something fancier, like put class:: in the function
 ;;   name and just display the function level)
 ;; * If there's room, might as well scrunch more levels in there
+;; * Do some work to never traverse backwards into CPP stuff
 
 ;; LaTeX mode
 ;; * Scrunch section names

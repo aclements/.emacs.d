@@ -23,6 +23,17 @@
 ;;   there.  It should also go away automatically if no errors occur.
 ;; * isearch should work in the electric buffer list
 ;; * magic-buffer-list
+;; * Better bookmarks system
+;; ** Place overlay arrows by bookmark markers
+;; ** Jump to bookmark should display an electric buffer showing the
+;;    context of each bookmark (one line above and below).  Either all
+;;    bookmarks or just buffer bookmarks.  Order by position in file
+;;    (recentness is hard to code, and probably harder to use)
+;; ** Integrate with magic-buffer-list.  Hit 'b' on buffer line to
+;;    bring up bookmarks menu for that buffer.  Add a getter for
+;;    number of bookmarks
+;; ** Ability to save bookmarks between sessions, like save-place (the
+;;    existing bookmarks system looks like it does this well)
 ;;
 ;;
 ;; Thing I think are fixed, but need more testing
