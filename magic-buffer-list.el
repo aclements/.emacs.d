@@ -161,6 +161,17 @@
 ;;   filters, sorters, and groupers
 ;;
 ;; * Add a context menu with buffer actions
+;;
+;; * Packing should be more expressive.  Packs should allow multiple
+;;   elements, including sub-packs.  Really, the whole thing should be
+;;   wrapped in a pack of the window-width instead of a concat
+;;
+;; * Buffer switch entropy and related buffer switching are both
+;;   mechanisms for automatically finding related buffers.  Related
+;;   buffer switching is hard-coded and presumably predictable, where
+;;   buffer switch entropy is adaptive and possibly unpredictable.  Is
+;;   there any way to unify these?
+
 
 
 ;; list-buffers is arcane.  On the other hand, it does precisely what
@@ -214,13 +225,31 @@ information on the meaning of each property."
           :match-alternatives (magic-buffer-list-valid-view-p)))
 
 (defcustom magic-buffer-list-views
-  `((group-by-major-mode
+  `((basic-list
+     :grouper ,#'magic-buffer-list-view-group-by-none
+     :format (" "
+              (reeval magic-buffer-list-view-basic-info)
+              " "
+              (15 major-mode :trim "..")
+              " "
+              (-48 filename-dimmed :align left :trim ".."
+                   :trim-align directory)))
+    (group-by-display-time
+     :grouper ,#'magic-buffer-list-view-group-by-display-time
+     :format (" "
+              (reeval magic-buffer-list-view-basic-info)
+              " "
+              (15 major-mode :trim "..")
+              " "
+              (-48 filename-dimmed :align left :trim ".."
+                   :trim-align directory)))
+    (group-by-major-mode
      :grouper ,#'magic-buffer-list-view-group-by-major-mode
      :format (" "
               (reeval magic-buffer-list-view-basic-info)
               " "
-              (-37 filename-dimmed :align left :trim ".."
-                   :trim-align right)))
+              (-32 filename-dimmed :align left :trim ".."
+                   :trim-align directory)))
     (group-by-directory
      :grouper ,#'magic-buffer-list-view-group-by-directory
      :format (" "
@@ -285,7 +314,8 @@ to :format and group lines formatted according to :group-format."
           :match-alternatives (magic-buffer-list-valid-views-p)))
 
 (defcustom magic-buffer-list-view-sequence
-  '(group-by-major-mode group-by-directory)
+  '(basic-list group-by-display-time
+               group-by-major-mode group-by-directory)
   "Sequence of views from `magic-buffer-list-views' to cycle through.
 
 This is a list of symbols, where each symbol must be the name of a
@@ -369,7 +399,7 @@ to insert modified, read-only, and visible flags.")
 
 (defvar magic-buffer-list-view-basic-info
   '(concat
-    (25 (concat (repeat indent-level "  ") name) :trim "..")
+    (20 (concat (repeat indent-level "  ") name) :trim "..")
     " "
     (4 size-string :align right)
     " "
@@ -439,6 +469,34 @@ name.  Comparisons are done using `string<'."
 identity grouper and produces a flat buffer list, similar to typical
 buffer lists."
   (mapcar (lambda (buffer) `(buffer ,buffer)) buffers))
+
+(defun magic-buffer-list-view-group-by-display-time (buffers)
+  ;; XXX The constant round-to points in this are unsatisfying.
+  ;; Really, it should try to balance the scale of these based on what
+  ;; times there are.
+  (let (aged ageless)
+    (dolist (buffer buffers)
+      (let ((time (magic-buffer-list-get 'display-time buffer)))
+        (if (= time 0)
+            (push buffer ageless)
+          (let* ((pp-age (magic-buffer-list-pp-age
+                          (- (float-time (current-time)) time)
+                          (list 60 (* 60 10) (* 60 60) (* 60 60 12))))
+                 (title (if pp-age
+                            (concat "< " pp-age " ago")
+                          (concat "Over "
+                                  (magic-buffer-list-pp-age
+                                   (* 60 60 12))
+                                  " ago"))))
+            (push `(group (:title ,title)
+                          (buffer ,buffer))
+                  aged)))))
+    (append
+     (magic-buffer-list-coalesce-groups (reverse aged))
+     (when ageless
+       `((group (:title "(never displayed)")
+                ,@(mapcar (lambda (buffer) `(buffer ,buffer))
+                          (reverse ageless))))))))
 
 (defun magic-buffer-list-view-group-by-major-mode (buffers)
   "Buffer list grouper that groups by major mode.  Within each group,
@@ -538,7 +596,7 @@ filename"
   "Get the buffer's last display time, as a float, or 0 if it has
 never been displayed"
   (if buffer-display-time
-      (float buffer-display-time)
+      (float-time buffer-display-time)
     0))
 (defun magic-buffer-list-getter-modified ()
   "Get whether or not the buffer is modified, as a boolean"
@@ -588,6 +646,30 @@ This tries to make the resulting string length at most 4 characters."
                 (t
                  ;; Try the next power
                  (incf power))))))))
+
+(defun magic-buffer-list-pp-age (age &optional round-to)
+  (when (or (null round-to)
+            (catch 'rounded
+              (dolist (round round-to)
+                (when (< age round)
+                  (setq age round)
+                  (throw 'rounded t)))
+              nil))
+    (let* ((days (/ age (* 60 60 24)))
+           (hours (/ (mod age (* 60 60 24)) (* 60 60)))
+           (minutes (/ (mod age (* 60 60)) 60))
+           (seconds (mod age 60))
+           (parts (list
+                   (if (> days 0)
+                       (format "%d days" days))
+                   (if (> hours 0)
+                       (format "%d hours" hours))
+                   (if (> minutes 0)
+                       (format "%d minutes" minutes))
+                   (if (> seconds 0)
+                       (format "%d seconds" seconds))))
+           (non-nil-parts (remove-if #'null parts)))
+      (mapconcat #'identity non-nil-parts ", "))))
 
 ;;
 ;; View system
@@ -786,7 +868,7 @@ In the future, this may employ optimizations such as caching."
                                              padding)
   (when (not (memq align '(left right)))
     (error "Unknown alignment %s" align))
-  (when (not (memq trim-align '(left right)))
+  (when (not (memq trim-align '(left right directory)))
     (error "Unknown trim alignment %s" trim-align))
   (let ((length (length string)))
     (cond ((= length width)
@@ -803,11 +885,20 @@ In the future, this may employ optimizations such as caching."
                (left (substring (concat str pad-str) 0 width))
                (right (substring (concat pad-str str) (- width))))))
           ((> length width)
-           (let ((trim-width (- width (length trim))))
-             (case trim-align
-               (left (concat (substring str 0 trim-width) trim))
+           (let ((trim-width (- width (length trim)))
+                 (real-align trim-align)
+                 (real-str str))
+             (when (eq trim-align 'directory)
+               (let ((filename (file-name-nondirectory str)))
+                 (if (< (length filename) trim-width)
+                     (setq real-align 'right)
+                   (setq real-align 'left)
+                   (setq real-str filename))))
+             (case real-align
+               (left (concat (substring real-str 0 trim-width) trim))
                (right (concat trim
-                              (substring str (- trim-width))))))))))
+                              (substring real-str
+                                         (- trim-width))))))))))
 
 (defun magic-buffer-list-format-eval (elt &optional to-string)
   (let ((data (magic-buffer-list-format-eval-internal elt)))
@@ -1087,7 +1178,12 @@ In the future, this may employ optimizations such as caching."
              (window-live-p orig-window))
         (save-selected-window
           (select-window orig-window)
-          (switch-to-buffer buffer t)))))
+          ;; Be careful not to alter with the buffer display time
+          (let ((orig-buffer-display-time
+                 (with-current-buffer buffer
+                   buffer-display-time)))
+            (switch-to-buffer buffer t)
+            (setq buffer-display-time orig-buffer-display-time))))))
 
 ;;
 ;; Line properties (overlays) and motion
@@ -1142,9 +1238,9 @@ In the future, this may employ optimizations such as caching."
                           (if (not cycle)
                               (throw 'hit-top-or-bottom t)
                             (cond ((< count 0)
-                                   (end-of-buffer))
+                                   (goto-char (point-max)))
                                   ((> count 0)
-                                   (beginning-of-buffer)))
+                                   (goto-char (point-min))))
                             (beginning-of-line)))
                       (when (magic-buffer-list-get-prop prop)
                         (throw 'moved-one t))
