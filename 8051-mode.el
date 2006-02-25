@@ -32,6 +32,8 @@
 ;; ** Others
 ;; *** Annotate psw.n with bit name (see 2-11 in MCS-11)
 ;; ** How to deal with symbolic constants like SFRs?
+;; ** Distinguish between internal and external addresses (could also
+;;    do RAM versus ROM, though it's the same for us)
 ;; * Indicate when argument types aren't valid for instruction
 ;; * Annotate with execution times of instructions
 ;; * Make # electric for #include?
@@ -243,9 +245,6 @@ documentation about the instruction on the current line")
       ;; equ with a pound sign is almost certainly a mistake
       (,(concat "^[ \t]*" label "[ \t]+equ[ \t]+\\(#[^ \t\n]*\\)")
        (1 font-lock-warning-face))
-      ;; Built-in functions
-      ("\\(\\<high\\>\\|\\<low\\>\\|\\+\\|-\\|\\*\\|/\\)"
-       (1 font-lock-builtin-face))
       ;; Bad label literal
       (,(concat "\\(#\\(?:" avoid-label "\\)\\>\\)")
        (1 font-lock-warning-face))
@@ -260,8 +259,9 @@ documentation about the instruction on the current line")
       ;; ASCII literals
       ("\\(#'.'\\)"
        (1 font-lock-constant-face prepend))
-      ;; Registers (and accumulator)
-      ("\\<\\(r[0-7]\\|a\\)\\>"
+      ;; Registers, accumulator, etc.
+      (,(concat "\\<\\(r[0-7]\\|@r[01]\\|a\\|c\\|ab\\|"
+                "@?dptr\\|@a\\+\\(?:dptr\\|pc\\)\\)\\>")
        (1 font-lock-variable-name-face))
       ;; Bit-addressable SFRs
       (,(concat "\\<\\(\\(?:" (regexp-opt bit-sfrs)
@@ -270,6 +270,10 @@ documentation about the instruction on the current line")
       ;; Non-bit-addressable SFRs
       (,(concat "\\<\\(" (regexp-opt non-bit-sfrs) "\\)\\>")
        (1 font-lock-variable-name-face))
+      ;; Built-in functions (this has to come after arguments or the +
+      ;; will confuse @a+dptr)
+      ("\\(\\<high\\>\\|\\<low\\>\\|\\+\\|-\\|\\*\\|/\\)"
+       (1 font-lock-builtin-face))
       ;; XXX Address literals, equ, invalid bits on bit-addressable
       ;; registers
       )))
