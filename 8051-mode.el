@@ -64,7 +64,7 @@
 (defvar 8051-instruction-offset 4
   "The column to indent instructions to.")
 
-(defvar 8051-argument-offset 12
+(defvar 8051-argument-offset (+ 8051-instruction-offset 6)
   "The column to indent arguments to.")
 
 (defvar 8051-equ-offset 12
@@ -73,6 +73,8 @@
 (defvar 8051-doc-delay 5
   "The number of seconds of idle time to wait for before displaying
 documentation about the instruction on the current line")
+
+(defvar 8051-label-history-list nil)
 
 (defconst 8051-top-comment-face '8051-top-comment-face)
 (defface 8051-top-comment-face
@@ -285,7 +287,7 @@ documentation about the instruction on the current line")
     (modify-syntax-entry ?\" "\"" st)
     (modify-syntax-entry ?\' "\"" st)
     (modify-syntax-entry ?#  "w"  st)
-    (modify-syntax-entry ?.  "."  st)
+    (modify-syntax-entry ?.  "_"  st)
     (modify-syntax-entry ?@  "w"  st)
     st))
 
@@ -300,6 +302,7 @@ documentation about the instruction on the current line")
     (define-key mm "\C-c\C-f" '8051-insert-function)
     (define-key mm "\C-c\C-t" '8051-insert-top-header)
     (define-key mm "\C-c\C-s" '8051-insert-section)
+    (define-key mm "\M->" '8051-find-label)
     mm))
 
 (defvar 8051-mode nil)
@@ -307,66 +310,9 @@ documentation about the instruction on the current line")
 
 (defvar 8051-doc-timer nil)
 
-(defun 8051-insert-two-blank-lines ()
-  ;; Ensure two blank lines
-  (delete-region (point)
-                 (save-excursion
-                   (skip-chars-backward " \t\n")
-                   (point)))
-  (unless (bobp)
-    (newline 3))
-  ;; Cleanup whitespace
-  (delete-horizontal-space))
-
-(defun 8051-insert-function (func-name)
-  (interactive "sFunction name: ")
-
-  (8051-insert-two-blank-lines)
-  ;; Cleanup whitespace
-  (delete-horizontal-space)
-  ;; Insert pre-point content
-  (insert (concat ";;; " func-name "\n"
-                  ";;; \n"
-                  ";;; "))
-  ;; Save the point
-  (let ((pos (point-marker)))
-    ;; Insert post-point content
-    (insert (concat "\n"
-                    ";;; \n"
-                    ";;; Arguments: \n"
-                    ";;; Returns: \n"
-                    ";;; Modifies: \n"
-                    func-name ":\n"))
-    (8051-indent-line)
-    ;; Return to the point
-    (goto-char pos)))
-
-(defun 8051-insert-top-header (lab exercise title)
-  (interactive "sLab: \nsExercise: \nsTitle: ")
-
-  (flet ((lrpad (left right)
-                (concat left
-                        (make-string (- fill-column
-                                        (length (concat left right)))
-                                     ? )
-                        right)))
-    ;; Just incase the line is indented
-    (delete-horizontal-space)
-    ;; Appendix and name
-    (insert (lrpad ";;; Appendix A" user-full-name))
-    (newline)
-    ;; Lab, exercise, and  title
-    (insert (lrpad (concat ";;; Lab " lab ", Exercise " exercise)
-                   title))
-    (newline)))
-
-(defun 8051-insert-section (section)
-  (interactive "sSection: ")
-
-  (8051-insert-two-blank-lines)
-  (insert (concat (make-string 66 ?\;) "\n"))
-  (insert (concat ";;; " section "\n"))
-  (insert (concat ";;; \n\n\n")))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; 8051 mode
+;;;
 
 (define-derived-mode 8051-mode fundamental-mode "8051"
   "Major mode for editing 8051 assembly and interacting with rasm.
@@ -395,6 +341,10 @@ documentation about the instruction on the current line")
         comment-multi-line nil
         comment-start-skip ";[ \t;]*")
 
+  ;; Paragraph navigation
+  (setq paragraph-start "^[ \t\n]*$"
+        paragraph-separate "^[ \t\n]*$")
+
   ;; Auto-documentation
   (unless 8051-doc-timer
     (setq 8051-doc-timer
@@ -412,6 +362,10 @@ documentation about the instruction on the current line")
               (message "%s - %s" op doc)
             (message "%s - Unknown op code" op))))
       (setq 8051-doc-showing op))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Line parsing and indenting
+;;;
 
 (defun 8051-get-opcode ()
   (let ((class (8051-classify-line)))
@@ -527,6 +481,10 @@ documentation about the instruction on the current line")
     (skip-chars-backward "^;\n")
     (= (char-before) ?\;)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Special keys
+;;;
+
 (defun 8051-electric-colon ()
   (interactive)
   (insert last-command-char)
@@ -553,3 +511,111 @@ documentation about the instruction on the current line")
           (delete-horizontal-space t)
         ;; Behave like regular backspace
         (backward-delete-char-untabify 1)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Template insertion
+;;;
+
+(defun 8051-insert-two-blank-lines ()
+  ;; Ensure two blank lines
+  (delete-region (point)
+                 (save-excursion
+                   (skip-chars-backward " \t\n")
+                   (point)))
+  (unless (bobp)
+    (newline 3))
+  ;; Cleanup whitespace
+  (delete-horizontal-space))
+
+(defun 8051-insert-function (func-name)
+  (interactive "sFunction name: ")
+
+  (8051-insert-two-blank-lines)
+  ;; Cleanup whitespace
+  (delete-horizontal-space)
+  ;; Insert pre-point content
+  (insert (concat ";;; " func-name "\n"
+                  ";;; \n"
+                  ";;; "))
+  ;; Save the point
+  (let ((pos (point-marker)))
+    ;; Insert post-point content
+    (insert (concat "\n"
+                    ";;; \n"
+                    ";;; Arguments: \n"
+                    ";;; Returns: \n"
+                    ";;; Modifies: \n"
+                    func-name ":\n"))
+    (8051-indent-line)
+    ;; Return to the point
+    (goto-char pos)))
+
+(defun 8051-insert-top-header (lab exercise title)
+  (interactive "sLab: \nsExercise: \nsTitle: ")
+
+  (flet ((lrpad (left right)
+                (concat left
+                        (make-string (- fill-column
+                                        (length (concat left right)))
+                                     ? )
+                        right)))
+    ;; Just incase the line is indented
+    (delete-horizontal-space)
+    ;; Appendix and name
+    (insert (lrpad ";;; Appendix A" user-full-name))
+    (newline)
+    ;; Lab, exercise, and  title
+    (insert (lrpad (concat ";;; Lab " lab ", Exercise " exercise)
+                   title))
+    (newline)))
+
+(defun 8051-insert-section (section)
+  (interactive "sSection: ")
+
+  (8051-insert-two-blank-lines)
+  (insert (concat (make-string 66 ?\;) "\n"))
+  (insert (concat ";;; " section "\n"))
+  (insert (concat ";;; \n\n\n")))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Label navigation
+;;;
+
+(defun 8051-find-label (label)
+  (interactive (8051-find-label-interactive "Find label: "))
+  (push-mark)
+  (goto-char (point-min))
+  (unless (re-search-forward (concat "^[ \t]*" label "[ \t]*:")
+                             nil t)
+    (message "Label \"%s\" not found" label)))
+
+(defun 8051-find-label-interactive (prompt)
+  (let* ((default (8051-find-label-get-default))
+         (label (completing-read
+                 (concat prompt "(default " default ") ")
+                 (8051-label-completion-table)
+                 nil nil nil '8051-label-history-list default)))
+    (setq 8051-label-history-list
+          (cons label 8051-label-history-list))
+    (list label)))
+
+(defun 8051-find-label-get-default ()
+  (save-excursion
+    (unless (memq (char-syntax (char-after)) '(?w ?_))
+      (skip-syntax-backward "^w_"))
+    (skip-syntax-backward "w_")
+    (buffer-substring-no-properties
+     (point)
+     (save-excursion
+       (skip-syntax-forward "w_")
+       (point)))))
+
+(defun 8051-label-completion-table ()
+  (save-excursion
+    (goto-char (point-min))
+    (let ((table nil))
+      (while (re-search-forward
+              (concat "^[ \t]*\\(" 8051-label-regex "\\)[ \t]*:")
+              nil t)
+        (setq table (cons (list (match-string-no-properties 1)) table)))
+      table)))
