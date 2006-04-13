@@ -264,7 +264,16 @@ information on the meaning of each property."
               " "
               (15 major-mode :trim "..")
               " "
-              filename-sans-directory)))
+              filename-sans-directory))
+    (6001-list
+     ;; XXX Is this not actually working?
+     :grouper ,#'magic-buffer-list-view-group-by-directory
+     :sorter ,#'magic-buffer-list-view-sort-alphabetical
+     :format (" "
+              (reeval magic-buffer-list-view-basic-info)
+              " "
+              (-32 filename-dimmed :align left :trim ".."
+                   :trim-align directory))))
   "List of available buffer list views.
 
 This is an alist, where each key should be either a symbol naming the
@@ -314,8 +323,8 @@ to :format and group lines formatted according to :group-format."
           :match-alternatives (magic-buffer-list-valid-views-p)))
 
 (defcustom magic-buffer-list-view-sequence
-  '(basic-list group-by-display-time
-               group-by-major-mode group-by-directory)
+  '(group-by-major-mode group-by-directory
+                        6001-list)
   "Sequence of views from `magic-buffer-list-views' to cycle through.
 
 This is a list of symbols, where each symbol must be the name of a
