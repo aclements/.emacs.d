@@ -44,18 +44,24 @@ block."
 
 (defmodefeature c-choose-style
   (let ((filename (buffer-file-name)))
-    (if (or (string-match "/jos/" filename)
-            (string-match "/6.828/" filename))
-        (progn
-          (message "Setting style for 6.828")
-          ;; (c-set-style "gnu")
-          ;;(make-local-variable 'c-basic-offset)
-          (c-set-style "bsd")
-          (make-local-variable 'perl-indent-level)
-          (setq ;;c-basic-offset 8
-                perl-indent-level 8
-                tab-width 8
-                indent-tabs-mode t)))))
+    (cond ((or (string-match "/jos/" filename)
+               (string-match "/6.828/" filename))
+           (message "Setting style for 6.828")
+           ;; (c-set-style "gnu")
+           ;;(make-local-variable 'c-basic-offset)
+           (c-set-style "bsd")
+           (make-local-variable 'perl-indent-level)
+           (setq perl-indent-level 8
+                 tab-width 8
+                 indent-tabs-mode t))
+          ((string-match "/qemu" filename)
+           (message "Setting style for qemu")
+           (setq c-basic-offset 4))
+          ((string-match "/l/" filename)
+           (message "Setting style for RSCC/ATCC")
+           (setq c-basic-offset 8
+                 tab-width 8
+                 indent-tabs-mode t)))))
 
 ;;; Set up the mode itself
 
