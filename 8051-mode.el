@@ -58,6 +58,8 @@
 ;;      paired with a return still in the procedure and any internal
 ;;      calls are paired with internal rets
 ;; ** Prologue and epilog stack pairing
+;; ** Check for reti at the end of interrupt handlers
+;; ** Check for psw push around interrupt handlers
 
 (require 'cl)
 
@@ -104,7 +106,7 @@ documentation about the instruction on the current line")
     ("jb"    "Jump if Bit Set")
     ("jbc"   "Jump if Bit Set and Clear Bit")
     ("jc"    "Jump if Carry Set")
-    ;("jmp"   "Jump to Address")         ; Makes rasm sad
+    ("jmp"   "Jump to Address")
     ("jnb"   "Jump if Bit Not Set")
     ("jnc"   "Jump if Carry Not Set")
     ("jnz"   "Jump if Accumulator Not Zero")
@@ -199,13 +201,13 @@ documentation about the instruction on the current line")
       (,(concat "^[ \t]*\\(" keywords "\\)\\>")
        (1 font-lock-keyword-face))
       ;; Label followed by a keyword
-      (,(concat "^" label "[ \t]*:[ \t]*\\(" keywords "\\)?\\>")
+      (,(concat "^" label ":[ \t]*\\(" keywords "\\)?\\>")
        (1 font-lock-keyword-face nil t))
       ;; Bad label
-      (,(concat "^\\(" avoid-label "\\)[ \t]*:")
+      (,(concat "^\\(" avoid-label "\\):")
        (1 font-lock-warning-face))
       ;; Just a label
-      (,(concat "^\\(" label "\\)[ \t]*:")
+      (,(concat "^\\(" label "\\):")
        (1 font-lock-function-name-face))
       ;; Include directives
       ("^#\\(include\\)\\([ \t]+[^ \t\n]+\\)?"
@@ -300,7 +302,7 @@ documentation about the instruction on the current line")
     (define-key mm "\C-m" 'reindent-then-newline-and-indent)
     (define-key mm [backspace] '8051-hungry-backspace)
     (define-key mm "\C-c\C-f" '8051-insert-function)
-    (define-key mm "\C-c\C-t" '8051-insert-top-header)
+    (define-key mm "\C-c\C-t" '8051-insert-top-header-final)
     (define-key mm "\C-c\C-s" '8051-insert-section)
     (define-key mm "\M->" '8051-find-label)
     mm))
@@ -387,7 +389,7 @@ documentation about the instruction on the current line")
     (beginning-of-line)
     (skip-chars-forward " \t")
     (cond ((eolp) 'blank)
-          ((looking-at "#include\\|org") 'directive)
+          ((looking-at "#include\\|org\\|\\.") 'directive)
           ((looking-at ";;;") 'top-comment)
           ((looking-at ";;") 'code-comment)
           ((looking-at ";") (if (bolp) 'block-comment 'side-comment))
@@ -479,7 +481,9 @@ documentation about the instruction on the current line")
   (save-excursion
     ;; XXX This doesn't deal with semicolons in strings
     (skip-chars-backward "^;\n")
-    (= (char-before) ?\;)))
+    (if (bobp)
+        nil
+      (= (char-before) ?\;))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Special keys
@@ -550,7 +554,7 @@ documentation about the instruction on the current line")
     ;; Return to the point
     (goto-char pos)))
 
-(defun 8051-insert-top-header (lab exercise title)
+(defun 8051-insert-top-header-lab (lab exercise title)
   (interactive "sLab: \nsExercise: \nsTitle: ")
 
   (flet ((lrpad (left right)
@@ -568,6 +572,33 @@ documentation about the instruction on the current line")
     (insert (lrpad (concat ";;; Lab " lab ", Exercise " exercise)
                    title))
     (newline)))
+
+(defun 8051-insert-top-header-final (appendix title)
+  (interactive "sAppendix: \nsTitle: ")
+
+  (flet ((lrpad (left right)
+                (concat left
+                        (make-string (- fill-column
+                                        (length (concat left right)))
+                                     ? )
+                        right)))
+    ;; Just incase the line is indented
+    (delete-horizontal-space)
+    (insert (lrpad (concat ";;; " user-full-name)
+                   "Final Project"))
+    (newline)
+    ;; Appendix and title
+    (insert (lrpad (concat ";;; Appendix " appendix)
+                   title))
+    (newline)
+    ;; Description
+    (insert ";;; ")
+    (newline)
+    (insert ";;; ")
+    (save-excursion
+      (newline)
+      (newline))))
+  
 
 (defun 8051-insert-section (section)
   (interactive "sSection: ")

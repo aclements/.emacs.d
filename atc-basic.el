@@ -103,7 +103,9 @@ unnecessary whitespace."
   ;; Place backup files in ~/.emacs-backup
   (when (require 'ebackup nil t)
     ;; Only keep 5 last backup copies around (the default is 10)
-    (setq ebackup-max-copies 5))
+    (setq ebackup-max-copies 5)
+    ;; XXX Only disable this on sshfs mounts
+    (setq file-precious-flag nil))
 
   ;; Interpret ANSI color codes in grep output
   (require 'compilation-colorization nil t)
@@ -114,6 +116,9 @@ unnecessary whitespace."
       "longlines"
       "Minor mode for automatically wrapping long lines." t)
     (setq longlines-show-hard-newlines t))
+
+  ;; Auto compression mode
+  (auto-compression-mode 1)
 
   ;; Misc usability variables
   (setq load-warn-when-source-newer t

@@ -43,8 +43,12 @@
 (atc:add-mode-features 'python-mode-hook '(filladapt))
 
 ;; MIT Scheme
-(atc:autoload-mode 'scheme-mode "xscheme" "\\.scm$")
-(atc:add-mode-features 'scheme-mode-hook '(autofill flyspell-prog))
+;(atc:autoload-mode 'scheme-mode "xscheme" "\\.scm$")
+
+;; PLT Scheme
+(atc:autoload-mode 'scheme-mode "quack" "\\.scm$")
+(atc:add-mode-features 'scheme-mode-hook '(autofill filladapt
+                                                    flyspell-prog))
 
 ;; Lisp
 (atc:add-mode-features '(lisp-mode-hook emacs-lisp-mode-hook)
@@ -52,8 +56,8 @@
 
 ;; Shell
 (atc:add-mode-features 'sh-mode-hook
-                       '(autofill filladapt flyspell-prog
-                                  shell-newline))
+                       '(;autofill
+                         filladapt flyspell-prog shell-newline))
 
 ;; HTML, text, and Subversion log messages
 (atc:add-mode-features '(html-mode-hook text-mode-hook)
@@ -77,7 +81,7 @@
 
 (atc:autoload-mode 'latex-mode "tex-site" "\\.tex$")
 (atc:add-mode-features 'LaTeX-mode-hook
-                       '(autofill flyspell-full
+                       '(autofill filladapt flyspell-full
                                   latex-bindings latex-faces))
 
 ;;; Fix flyspell
@@ -91,4 +95,17 @@
     ad-do-it))
 
 ;; flyspell only knows about tex-mode by default
+;; Not necessary with new version of flyspell
 ;(put 'latex-mode 'flyspell-mode-predicate 'tex-mode-flyspell-verify)
+
+;; Assembly
+(atc:autoload-mode '8051-mode "8051-mode" "\\.asm$")
+(atc:add-mode-features '8051-mode-hook '(autofill filladapt
+                                                  flyspell-prog))
+
+;; RSCC Grammar
+(atc:autoload-mode 'rsccg-mode "rsccg-mode" "\\.g$")
+
+;; Haskell
+(atc:autoload-mode 'haskell-mode "haskell-mode" "\\.hs$")
+(atc:add-mode-features 'haskell-mode '(flyspell-prog))
