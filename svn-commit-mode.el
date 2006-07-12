@@ -32,7 +32,47 @@
 ;; The recommended auto-mode regexp is:
 ;; "svn-commit\\(\\.[0-9]+\\)?\\.tmp"
 
+;;; Todo:
+
+;; * Check if there is an existing commit message and offer to pull in
+;;   the message and delete the old commit message (ie, if there was a
+;;   commit failure and subversion left behind the old message)
+
 ;;; Code:
+
+(defconst svn-commit-file-face 'svn-commit-file-face)
+(defface svn-commit-file-face
+  '((((class color) (background dark))
+     (:weight bold))
+    (t (:inherit default)))
+  "Face used for files."
+  :group 'svn-commit-mode)
+
+(defconst svn-commit-added-face 'svn-commit-added-face)
+(defface svn-commit-added-face
+  '((((class color) (background light))
+     (:foreground "green"))
+    (((class color) (background dark))
+     (:foreground "green"))
+    (t (:inherit svn-commit-file-face)))
+  "Face used for added files."
+  :group 'svn-commit-mode)
+
+(defconst svn-commit-modified-face 'svn-commit-modified-face)
+(defface svn-commit-modified-face
+  '((t (:foreground "yellow") (:inherit svn-commit-file-face)))
+  "Face used for modified files."
+  :group 'svn-commit-mode)
+
+(defconst svn-commit-deleted-face 'svn-commit-deleted-face)
+(defface svn-commit-deleted-face
+  '((((class color) (background light))
+     (:foreground "red"))
+    (((class color) (background dark))
+     (:foreground "red"))
+    (t (:inherit svn-commit-file-face)))
+  "Face used for removed files."
+  :group 'svn-commit-mode)
 
 (defconst svn-commit-ignore-regexp
   "^--This line, and those below, will be ignored--\n"
@@ -40,8 +80,11 @@
 ignore block.")
 
 (defvar svn-commit-font-lock-keywords
-  `((,(concat svn-commit-ignore-regexp "\\(.\\|\n\\)*") .
-     font-lock-comment-face)))
+  `((,svn-commit-ignore-regexp . font-lock-comment-face)
+    ("^A[ M] [ +] .*" . svn-commit-added-face)
+    ("^M[ M] [ +] .*" . svn-commit-modified-face)
+    ("^D[ M] [ +] .*" . svn-commit-deleted-face)
+    ("^[ AMD]M [ +] .*" . svn-commit-modified-face)))
 
 (defvar svn-commit-mode nil)
 (make-variable-buffer-local 'svn-commit-mode)
