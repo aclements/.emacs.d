@@ -157,12 +157,12 @@ block."
     ;; Nuke all of the whitespace leading up to the ignore block
     (when (re-search-forward svn-commit-ignore-regexp nil t)
       (goto-char (match-beginning 0))
-      (skip-chars-backward " \n\t")
-      (delete-region (point) (match-beginning 0))
-      (if (= (point) (point-min))
-          ;; There is no user text; leave an extra blank line
-          (newline))
-      ;; Put a newline back in there
-      (newline)))
+      ;; Leave the ignore line at the beginning of the line
+      (if (not (bobp))
+          (forward-char -1))
+      ;; Scan over extraneous whitespace and delete it
+      (let ((end (point)))
+        (skip-chars-backward " \n\t")
+        (delete-region (point) end))))
   ;; Report that this hook did not save the buffer
   nil)
