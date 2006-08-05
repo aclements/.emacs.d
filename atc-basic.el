@@ -126,6 +126,10 @@ unnecessary whitespace."
         next-line-add-newlines      nil
         x-stretch-cursor            t)
 
+  ;; Improve completion (this doesn't seem to work...  Emacs 22
+  ;; feature?)
+  (add-to-list 'completion-ignored-extensions ".svn/")
+
   ;; Enable dangerous functions
   (put 'narrow-to-region 'disabled nil)
   
@@ -160,6 +164,7 @@ really slow things down."
       ;; XXX Use autoload voodoo instead
       (progn
         (global-set-key "\C-x\C-b" (function magic-buffer-list))
+        (global-set-key "\C-xB" (function magic-buffer-list-other-window))
         (global-set-key "\M-r"
                         (function magic-buffer-list-and-select-next))
         (global-set-key "\M-R"
@@ -187,13 +192,13 @@ server buffers."
     ;; what server does.  Either focus the existing buffer, or create
     ;; a new frame containing it without messing with any existing
     ;; frames.
-    (add-hook 'server-switch-hook
-              (lambda ()
-                (let ((buffer (current-buffer)))
-                  (bury-buffer)
-                  (let ((pop-up-windows nil)
-                        (pop-up-frames t))
-                    (pop-to-buffer buffer)))))
+;;     (add-hook 'server-switch-hook
+;;               (lambda ()
+;;                 (let ((buffer (current-buffer)))
+;;                   (bury-buffer)
+;;                   (let ((pop-up-windows nil)
+;;                         (pop-up-frames t))
+;;                     (pop-to-buffer buffer)))))
 
     ;; Make kill-buffer just release the client without complaining
     ;; about it
@@ -230,6 +235,19 @@ popped up by new connections are independent Emacsen."
 well with `atc:setup-server'."
   (global-set-key "\C-x\C-c" (function kill-server-or-frame-or-emacs)))
 
+;;; Post mode
+
+(defun atc:post-mode-jump-cursor ()
+  "Automatically jump the cursor to the Right Place in post-mode"
+  (if (re-search-backward "^To:\\s *$" nil t)
+      (progn
+        (goto-line 2)
+        (end-of-line))))
+(defun atc:setup-post-mode ()
+  ;; XXX Can I autoload this instead?
+  (when (require 'post nil t)
+    (add-hook 'post-mode-hook (function atc:post-mode-jump-cursor))))
+
 ;;; Everything
 
 (defun atc:basic-setup-all ()
@@ -243,4 +261,5 @@ well with `atc:setup-server'."
   (atc:disable-ange-ftp)
   (atc:setup-global-bindings)
   (atc:setup-server)
-  (atc:setup-kill-dwim))
+  (atc:setup-kill-dwim)
+  (atc:setup-post-mode))
