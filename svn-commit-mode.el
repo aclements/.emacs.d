@@ -93,10 +93,11 @@ and display the old commit message.")
 (defvar svn-commit-delete-old-message t
   "If an old commit message was restored, offer to delete the old
 commit message file when this commit message is saved.")
+(defcustom svn-commit-mode-hook nil
+  "Normal hook run when entering svn commit mode."
+  :type 'hook
+  :group 'svn-commit-mode)
 
-(defvar svn-commit-mode nil
-  "Whether or not this buffer is in svn-commit-mode.  Buffer local.")
-(make-variable-buffer-local 'svn-commit-mode)
 
 (defvar svn-commit-restored-filename nil
   "If this commit message was restored from an old commit message,
@@ -155,16 +156,13 @@ message has been deleted).")
   ;; Delete the old commit message when this one is saved
   (if svn-commit-delete-old-message
       (add-hook 'after-save-hook
-                (function svn-delete-old-commit-message)))
-
-  ;; And, finally, we're in svn commit mode.
-  (setq svn-commit-mode t))
+                (function svn-delete-old-commit-message))))
 
 (defadvice fill-paragraph (around svn-ignore-lines)
   "If in svn-commit-mode, cause paragraph filling to not extend to the
 ignore block.  If the point is in the ignore block, completely ignores
 the fill request."
-  (if (not svn-commit-mode)
+  (if (not (eq major-mode 'svn-commit-mode))
       ad-do-it
     (let ((ignore-begin
            ;; Look forward for the ignore block
@@ -198,6 +196,10 @@ block."
       ;; Scan over extraneous whitespace and delete it
       (let ((end (point)))
         (skip-chars-backward " \n\t")
+        ;; Allow trailing whitespace (not doing this is annoying with,
+        ;; for example, templates that have unfilled-in labels at the
+        ;; bottom)
+        (end-of-line)
         (delete-region (point) end))))
   ;; Report that this hook did not save the buffer
   nil)
@@ -271,7 +273,7 @@ user."
   (interactive)
   ;; If we're in a commit mode buffer that was restored from an old
   ;; message, prompt the user about deleting the old message
-  (when (and svn-commit-mode
+  (when (and (eq major-mode 'svn-commit-mode)
              svn-commit-restored-filename
              (or force
                  (yes-or-no-p (format "Delete old commit message %s? "
