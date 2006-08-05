@@ -40,7 +40,7 @@
 
 ;; Python
 (atc:autoload-mode 'python-mode "python-mode" "\\.py$" "python")
-(atc:add-mode-features 'python-mode-hook '(filladapt))
+(atc:add-mode-features 'python-mode-hook '(filladapt flyspell-prog))
 
 ;; MIT Scheme
 ;(atc:autoload-mode 'scheme-mode "xscheme" "\\.scm$")
@@ -109,3 +109,18 @@
 ;; Haskell
 (atc:autoload-mode 'haskell-mode "haskell-mode" "\\.hs$")
 (atc:add-mode-features 'haskell-mode '(flyspell-prog))
+
+;; XML
+(when (load "nxml-mode/rng-auto" t)
+  (add-to-list 'auto-mode-alist
+               '("\\.\\(xml\\|xsl\\|rng\\|xhtml\\)\\'" . nxml-mode))
+  ;; Based on http://www.emacswiki.org/cgi-bin/wiki/NxmlMode
+  (if (boundp 'magic-mode-alist)
+      ;; Emacs 22?
+      (add-to-list magic-mode-alist '("<\\?xml " . nxml-mode))
+    (add-hook 'hack-local-variables-hook
+              (lambda ()
+                (save-excursion
+                  (goto-char (point-min))
+                  (when (looking-at "^<\\?xml ")
+                    (nxml-mode)))))))
