@@ -269,8 +269,8 @@ present by displaying the line that would be there anyways."
             (setq header-line-format
                   '(:eval (show-context-mode-compute-headerline)))
           (setq header-line-format nil)
-          (error "Show-context mode doesn't know about %s"
-                 major-mode)))
+          (message "Show-context mode doesn't know about %s"
+                   major-mode)))
     ;; Restore the header line
     (kill-local-variable 'header-line-format)
     (when (local-variable-p 'show-context-mode-old-hlf)
