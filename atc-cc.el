@@ -27,7 +27,9 @@ block."
   (c-toggle-auto-hungry-state 1))
 
 (defmodefeature c-filladapt
-  (function c-setup-filladapt))
+  (when (featurep 'filladapt)
+    (turn-on-filladapt-mode)
+    (c-setup-filladapt)))
 
 (defmodefeature c-magic-punctuation
   (when (require 'c-magic-punctuation nil t)
@@ -42,8 +44,22 @@ block."
   (setq compilation-window-height 10
         compilation-scroll-output t))
 
+(defun streambase-style ()
+  (c-set-offset 'inline-open 0)
+  (c-set-offset 'label '*)
+  (c-set-offset 'case-label '*)
+  (c-set-offset 'statement-case-intro '*)
+  (c-set-offset 'statement-case-open '*)
+  (c-set-offset 'substatement-open 0)
+  (c-set-offset 'access-label '/)
+
+  (setq c-basic-offset 4
+        tab-width 4
+        indent-tabs-mode nil))
+
 (defmodefeature c-choose-style
-  (let ((filename (buffer-file-name)))
+  (let ((filename (buffer-file-name))
+        (hostname (system-name)))
     (cond ((or (string-match "/jos/" filename)
                (string-match "/6.828/" filename))
            (message "Setting style for 6.828")
@@ -61,7 +77,10 @@ block."
            (message "Setting style for RSCC/ATCC")
            (setq c-basic-offset 8
                  tab-width 8
-                 indent-tabs-mode t)))))
+                 indent-tabs-mode t))
+          ((string-match ".streambase.com$" hostname)
+           (message "Setting style for StreamBase")
+           (streambase-style)))))
 
 ;;; Set up the mode itself
 
@@ -75,8 +94,7 @@ block."
 
 ;; Set C's features
 (atc:add-mode-features 'c-mode-common-hook
-                       '(autofill filladapt flyspell-prog
-                                  highlight-unhappy
+                       '(autofill flyspell-prog highlight-unhappy
                                   final-newline-always c-defun-jump
                                   c-auto-hungry c-filladapt
                                   c-magic-punctuation c-show-func
