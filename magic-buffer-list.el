@@ -379,6 +379,18 @@ selected."
   (message
    "RET selects buffer, q buries list, TAB changes view, n jumps to next group"))
 
+(defun magic-buffer-list-other-window ()
+  "Like `magic-buffer-list', but displays the buffer list and opens
+the selected buffer in the other window.  If no other window is
+currently open, this first splits the current window."
+  (interactive)
+  (let ((cur (current-buffer)))
+    (if (= (count-windows nil) 1)
+        (let ((split-window-keep-point t))
+          (split-window-vertically))
+      (other-window 1))
+    (magic-buffer-list-show-view nil cur)))
+
 (defun magic-buffer-list-and-select-next ()
   "XXX"
   (interactive)
