@@ -34,6 +34,10 @@
 ;; The recommended auto-mode regexp is:
 ;; "svn-commit\\(\\.[0-9]+\\)?\\.tmp"
 
+;; To do
+;; * Make it possible to easily view the diff of any file being
+;;   checked in
+
 ;;; Code:
 
 (defconst svn-commit-file-face 'svn-commit-file-face)
