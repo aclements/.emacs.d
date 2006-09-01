@@ -3,25 +3,27 @@
 ;;;
 
 (when (string-match ".streambase.com$" (system-name))
-  ;; CEDET
-  (load-file "~/sys/elisp/extra/jdee/cedet-1.0pre3/common/cedet.el")
+  (unless atc-load-fast
+    ;; CEDET
+    (load-file "~/sys/elisp/extra/jdee/cedet-1.0pre3/common/cedet.el")
 
-  ;; Semantic
-;;  (semantic-load-enable-code-helpers)
-;; (semantic-load-enable-guady-code-helpers)
-;; (semantic-load-enable-excessive-code-helpers)
+    ;; Semantic
+    ;;  (semantic-load-enable-code-helpers)
+    ;; (semantic-load-enable-guady-code-helpers)
+    ;; (semantic-load-enable-excessive-code-helpers)
 
-  ;; Elib
-  (add-to-list 'load-path "~/sys/elisp/extra/jdee/elib")
+    ;; Elib
+    (add-to-list 'load-path "~/sys/elisp/extra/jdee/elib")
 
-  ;; JDEE
-  (add-to-list 'load-path "~/sys/elisp/extra/jdee/jde-2.3.5.1/lisp")
+    ;; JDEE
+    (add-to-list 'load-path "~/sys/elisp/extra/jdee/jde-2.3.5.1/lisp")
 
-  (require 'jde)
-  (require 'jde-xref)
+    (require 'jde)
+    (require 'jde-xref)
 
-  ;; XXX Only for Java
-  (global-semantic-stickyfunc-mode 1)
+    ;; XXX Only for Java
+    ;;   (global-semantic-stickyfunc-mode 1)
+    )
 
   (setq-default
    jde-jdk-registry '(("1.4.2" . "/usr/java/j2sdk1.4.2_07"))

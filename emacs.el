@@ -62,6 +62,10 @@
  "~/sys/elisp/extra-pre" "Failed to find user-local override packages"
  nil nil)
 
+(setq atc-load-fast
+      (let ((env (getenv "EMACS_LOAD_FAST")))
+        (and env (> (length env) 0))))
+
 ;; Load customization files
 (load "atc-basic")
 (atc:setup-user "Austin Clements" "amdragon@mit.edu")
