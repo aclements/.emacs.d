@@ -46,9 +46,31 @@
 ;(atc:autoload-mode 'scheme-mode "xscheme" "\\.scm$")
 
 ;; PLT Scheme
+(defun scheme-send-buffer ()
+  (interactive)
+  (scheme-send-region (point-min)
+                      (point-max)))
+(defmodefeature quack-send-buffer
+  (local-set-key "\C-c\C-c" 'scheme-send-buffer)
+  ;; Quack inadvertently changes the semantics of scheme-proc in bad
+  ;; ways.  It advises it so that, if no current inferior Scheme
+  ;; buffer exists, it starts a new one.  However, it has the
+  ;; side-effect of switching to this new buffer.  This break
+  ;; functions like scheme-send-region, which then try to read from
+  ;; the Scheme process buffer instead of the buffer in which they
+  ;; were called.
+  (defadvice scheme-proc (around atc-ad-fix-quack first nil activate)
+    (save-current-buffer
+      ad-do-it)))
+
 (atc:autoload-mode 'scheme-mode "quack" "\\.scm$")
 (atc:add-mode-features 'scheme-mode-hook '(autofill filladapt
-                                                    flyspell-prog))
+                                                    flyspell-prog
+                                                    quack-send-buffer))
+(setq quack-fontify-style 'emacs
+      ;; Alas, this only works with plt-style fontification
+      quack-pretty-lambda-p t
+      quack-run-scheme-always-prompts-p nil)
 
 ;; Lisp
 (atc:add-mode-features '(lisp-mode-hook emacs-lisp-mode-hook)
@@ -77,7 +99,10 @@
   (dolist (face '(font-latex-title-1-face
                   font-latex-title-2-face
                   font-latex-title-3-face))
-    (face-spec-set face '((t (:inherit font-latex-title-4-face))))))
+    (face-spec-set face '((t (:inherit font-latex-title-4-face)))))
+  ;; Add a "problem" title keyword
+  (setq font-latex-match-title-1-keywords '("problem"))
+  (font-latex-match-title-1-make))
 
 (atc:autoload-mode 'latex-mode "tex-site" "\\.tex$")
 (atc:add-mode-features 'LaTeX-mode-hook
@@ -109,6 +134,20 @@
 ;; Haskell
 (atc:autoload-mode 'haskell-mode "haskell-mode" "\\.hs$")
 (atc:add-mode-features 'haskell-mode '(flyspell-prog))
+
+;; Literate Haskell
+(atc:autoload-mode 'latex-mode "tex-site" "\\.lhs$")
+(require 'mmm-auto)
+(mmm-add-classes
+ '((literate-haskell
+    :submode haskell-mode
+    :front "\\\\begin[ \t]*{code}\n"
+    ;; The \n at the beginning of back prevents the mis-fontification
+    ;; of the line matching this regex.  Without this, haskell-mode
+    ;; will fontify it when the haskell-mode region is edited
+    :back "\n\\\\end[ \t]*{code}")))
+(add-to-list 'mmm-mode-ext-classes-alist
+             '(latex-mode "\\.lhs$" literate-haskell))
 
 ;; XML
 (when (load "nxml-mode/rng-auto" t)

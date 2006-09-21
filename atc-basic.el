@@ -77,6 +77,14 @@ unnecessary whitespace."
                   mode-line-modes
                   "-%-")))
 
+(defun atc:setup-mmm ()
+  (custom-set-faces
+   '(mmm-default-submode-face
+     ((((background dark))
+       (:background "DimGray"))
+      (t (:background "LightGray")))))
+  (setq mmm-global-mode 'maybe))
+
 ;;; Usability
 
 (defun atc:setup-misc-usability ()
@@ -125,6 +133,10 @@ unnecessary whitespace."
         inhibit-startup-message     t
         next-line-add-newlines      nil
         x-stretch-cursor            t)
+
+  ;; Improved ps-print defaults
+  (setq ps-landscape-mode t
+        ps-number-of-columns 2)
 
   ;; Improve completion (this doesn't seem to work...  Emacs 22
   ;; feature?)
@@ -256,6 +268,7 @@ well with `atc:setup-server'."
   (atc:setup-colors)
   (atc:setup-buffer-look)
   (atc:setup-mode-line)
+  (atc:setup-mmm)
   (atc:setup-misc-usability)
   (atc:setup-ispell)
   (atc:disable-ange-ftp)
