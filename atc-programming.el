@@ -137,17 +137,17 @@
 
 ;; Literate Haskell
 (atc:autoload-mode 'latex-mode "tex-site" "\\.lhs$")
-(require 'mmm-auto)
-(mmm-add-classes
- '((literate-haskell
-    :submode haskell-mode
-    :front "\\\\begin[ \t]*{code}\n"
-    ;; The \n at the beginning of back prevents the mis-fontification
-    ;; of the line matching this regex.  Without this, haskell-mode
-    ;; will fontify it when the haskell-mode region is edited
-    :back "\n\\\\end[ \t]*{code}")))
-(add-to-list 'mmm-mode-ext-classes-alist
-             '(latex-mode "\\.lhs$" literate-haskell))
+(when (load "mmm-auto" t)
+  (mmm-add-classes
+   '((literate-haskell
+      :submode haskell-mode
+      :front "\\\\begin[ \t]*{code}\n"
+      ;; The \n at the beginning of back prevents the mis-fontification
+      ;; of the line matching this regex.  Without this, haskell-mode
+      ;; will fontify it when the haskell-mode region is edited
+      :back "\n\\\\end[ \t]*{code}")))
+  (add-to-list 'mmm-mode-ext-classes-alist
+               '(latex-mode "\\.lhs$" literate-haskell)))
 
 ;; XML
 (when (load "nxml-mode/rng-auto" t)
