@@ -73,7 +73,7 @@ block."
           ((string-match "/qemu" filename)
            (message "Setting style for qemu")
            (setq c-basic-offset 4))
-          ((string-match "/l/" filename)
+          ((string-match "/atcc/" filename)
            (message "Setting style for RSCC/ATCC")
            (setq c-basic-offset 8
                  tab-width 8
@@ -81,6 +81,12 @@ block."
           ((string-match ".streambase.com$" hostname)
            (message "Setting style for StreamBase")
            (streambase-style)))))
+;; Don't decompress .z files
+(mapcar
+ (lambda (a)
+   (when (string-match "\\\\\\.g\\?z" (aref a 0))
+     (aset a 0 (replace-match "\\.gz" t t (aref a 0)))))
+ jka-compr-compression-info-list)
 
 ;;; Set up the mode itself
 

@@ -132,8 +132,22 @@
 (atc:autoload-mode 'rsccg-mode "rsccg-mode" "\\.g$")
 
 ;; Haskell
+;; XXX
+(load "~/sys/elisp/extra-pre/haskell-mode-2.1/haskell-site-file")
+(defmodefeature haskell-filladapt
+  ;; Add Haskell comments to filladapt.
+  ;; XXX These variables aren't local, so the only advantage of doing
+  ;; this here is that it won't happen until filladapt needs to be
+  ;; loaded
+  (add-to-list 'filladapt-token-table
+               '("-- " haskell-comment))
+  (add-to-list 'filladapt-token-match-table
+               '(haskell-comment haskell-comment))
+  (add-to-list 'filladapt-token-conversion-table
+               '(haskell-comment . exact)))
 (atc:autoload-mode 'haskell-mode "haskell-mode" "\\.hs$")
-(atc:add-mode-features 'haskell-mode '(flyspell-prog))
+(atc:add-mode-features 'haskell-mode-hook
+                       '(flyspell-prog filladapt haskell-filladapt))
 
 ;; Literate Haskell
 (atc:autoload-mode 'latex-mode "tex-site" "\\.lhs$")
