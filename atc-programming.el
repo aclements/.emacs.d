@@ -95,14 +95,9 @@
   ;; This gets unset by latex-mode
   (local-set-key "\C-m" 'newline-and-indent))
 (defmodefeature latex-faces
-  ;; Make all of the section faces small
-  (dolist (face '(font-latex-title-1-face
-                  font-latex-title-2-face
-                  font-latex-title-3-face))
-    (face-spec-set face '((t (:inherit font-latex-title-4-face)))))
   ;; Add a "problem" title keyword
-  (setq font-latex-match-title-1-keywords '("problem"))
-  (font-latex-match-title-1-make))
+  (setq font-latex-match-sectioning-1-keywords '("problem"))
+  (font-latex-match-sectioning-1-make))
 
 (atc:autoload-mode 'latex-mode "tex-site" "\\.tex$")
 (atc:add-mode-features 'LaTeX-mode-hook
@@ -133,7 +128,7 @@
 
 ;; Haskell
 ;; XXX
-(load "~/sys/elisp/extra-pre/haskell-mode-2.1/haskell-site-file")
+;;(load "~/sys/elisp/extra-pre/haskell-mode-2.1/haskell-site-file")
 (defmodefeature haskell-filladapt
   ;; Add Haskell comments to filladapt.
   ;; XXX These variables aren't local, so the only advantage of doing
