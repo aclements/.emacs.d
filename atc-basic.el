@@ -39,7 +39,8 @@ present, and this doesn't hurt."
   (setq truncate-partial-width-windows nil
         column-number-mode             t
         frame-title-format             '("%b" " - " invocation-name))
-  (global-font-lock-mode t))
+  (unless emacs22
+    (global-font-lock-mode t)))
 
 (defun atc:setup-mode-line ()
   "Move the useful, short, non-static information to earlier in the
@@ -89,7 +90,8 @@ unnecessary whitespace."
 
 (defun atc:setup-misc-usability ()
   "Sets up lots of miscellaneous usability features"
-  (mouse-wheel-mode t)
+  (unless emacs22                       ; Enabled by default
+    (mouse-wheel-mode t))
 
   ;; Save buffer positions between sessions
   (when (require 'saveplace nil t)
@@ -126,21 +128,28 @@ unnecessary whitespace."
     (setq longlines-show-hard-newlines t))
 
   ;; Auto compression mode
-  (auto-compression-mode 1)
+  (unless emacs22                       ; Enabled by default
+    (auto-compression-mode 1))
 
   ;; Misc usability variables
   (setq load-warn-when-source-newer t
         inhibit-startup-message     t
         next-line-add-newlines      nil
         x-stretch-cursor            t)
+  (when emacs22
+    (setq inhibit-startup-buffer-menu  t
+          query-replace-lazy-highlight t
+          default-indicate-buffer-boundaries t
+          mouse-autoselect-window      t)
+    (set-fringe-mode 5))
 
   ;; Improved ps-print defaults
   (setq ps-landscape-mode t
         ps-number-of-columns 2)
 
-  ;; Improve completion (this doesn't seem to work...  Emacs 22
-  ;; feature?)
-  (add-to-list 'completion-ignored-extensions ".svn/")
+  ;; Ignore .svn directories in completion
+  (when emacs22
+    (add-to-list 'completion-ignored-extensions ".svn/"))
 
   ;; Enable dangerous functions
   (put 'narrow-to-region 'disabled nil)
@@ -170,7 +179,9 @@ really slow things down."
 
 (defun atc:setup-global-bindings ()
   "Sets useful global bindings."
-  (global-set-key "\C-c\g"   (function goto-line))
+  (unless emacs22
+    (global-set-key "\M-g\g"   (function goto-line))
+    (global-set-key "\M-g\M-g" (function goto-line)))
   (global-set-key "\C-x\C-k" (function kill-buffer))
   (if (require 'magic-buffer-list nil t)
       ;; XXX Use autoload voodoo instead

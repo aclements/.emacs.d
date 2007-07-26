@@ -45,6 +45,9 @@
 ;; * Brace insertion in C++ (look at skeleton.el)
 ;; * gnuclient/emacsclient with a new frame
 
+;; Make it easy to test for Emacs 22
+(setq emacs22 (>= emacs-major-version 22))
+
 ;; Set appropriate load-path
 (defun atc:add-to-load-path-maybe (path msg append fatal)
   (if (not (file-accessible-directory-p path))
@@ -54,6 +57,7 @@
     (add-to-list 'load-path path append)))
 (atc:add-to-load-path-maybe
  "~/sys/elisp" "Failed to find elisp directory" nil t)
+
 (atc:add-to-load-path-maybe
  "~/sys/elisp/extra" "Failed to find user-local packages" t nil)
 ;; XXX I wish there was a way to load the _latest_ version of these
@@ -61,6 +65,14 @@
 (atc:add-to-load-path-maybe
  "~/sys/elisp/extra-pre" "Failed to find user-local override packages"
  nil nil)
+
+(unless emacs22
+  (atc:add-to-load-path-maybe
+   "~/sys/elisp/extra.21"
+   "Failed to find Emacs 21 user-local packages" t nil)
+  (atc:add-to-load-path-maybe
+   "~/sys/elisp/extra-pre.21"
+   "Failed to find Emacs 21 user-local override packages" nil nil))
 
 (setq atc-load-fast
       (let ((env (getenv "EMACS_LOAD_FAST")))

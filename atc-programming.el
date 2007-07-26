@@ -39,7 +39,8 @@
 (load "atc-cc")
 
 ;; Python
-(atc:autoload-mode 'python-mode "python-mode" "\\.py$" "python")
+(unless emacs22
+  (atc:autoload-mode 'python-mode "python-mode" "\\.py$" "python"))
 (atc:add-mode-features 'python-mode-hook '(filladapt flyspell-prog))
 
 ;; MIT Scheme
@@ -70,7 +71,7 @@
 (setq quack-fontify-style 'emacs
       ;; Alas, this only works with plt-style fontification
       quack-pretty-lambda-p t
-      quack-run-scheme-always-prompts-p nil)
+      quack-run-scheme-always-prompts-p t)
 
 ;; Lisp
 (atc:add-mode-features '(lisp-mode-hook emacs-lisp-mode-hook)
@@ -97,7 +98,9 @@
 (defmodefeature latex-faces
   ;; Add a "problem" title keyword
   (setq font-latex-match-sectioning-1-keywords '("problem"))
-  (font-latex-match-sectioning-1-make))
+  (font-latex-match-sectioning-1-make)
+  ;; Disable French and German quotes
+  (setq font-latex-quote-list '(("``" "''"))))
 
 (atc:autoload-mode 'latex-mode "tex-site" "\\.tex$")
 (atc:add-mode-features 'LaTeX-mode-hook
@@ -109,10 +112,11 @@
 ;; Flyspell has major issues when replaying keyboard macros.  I don't
 ;; know if this fix will correctly check all changes made by keyboard
 ;; macros (I think it will), but it's well worth it
-(defadvice flyspell-post-command-hook (around flyspell-in-macros-bug
-                                       activate)
-  (unless executing-kbd-macro
-    ad-do-it))
+(unless emacs22
+  (defadvice flyspell-post-command-hook (around flyspell-in-macros-bug
+                                                activate)
+    (unless executing-kbd-macro
+      ad-do-it)))
 
 ;; flyspell only knows about tex-mode by default
 ;; Not necessary with new version of flyspell
@@ -163,9 +167,11 @@
   (add-to-list 'auto-mode-alist
                '("\\.\\(xml\\|xsl\\|rng\\|xhtml\\)\\'" . nxml-mode))
   ;; Based on http://www.emacswiki.org/cgi-bin/wiki/NxmlMode
+  (fset 'xml-mode 'nxml-mode)
+  (fset 'html-mode 'nxml-mode)
   (if (boundp 'magic-mode-alist)
-      ;; Emacs 22?
-      (add-to-list magic-mode-alist '("<\\?xml " . nxml-mode))
+      ;; Emacs 22
+      (add-to-list 'magic-mode-alist '("<\\?xml " . nxml-mode))
     (add-hook 'hack-local-variables-hook
               (lambda ()
                 (save-excursion
