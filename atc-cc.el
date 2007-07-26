@@ -57,6 +57,16 @@ block."
         tab-width 4
         indent-tabs-mode nil))
 
+(defun cc-fix-slash-paren ()
+  "Fix paren balancing where the open paren appears to be escaped.
+This is not valid syntax in C, but can be in C-like languages."
+  (make-variable-buffer-local 'parse-sexp-lookup-properties)
+  (setq parse-sexp-lookup-properties t)
+  (make-variable-buffer-local 'font-lock-syntactic-keywords)
+  (setq font-lock-syntactic-keywords
+        (cons '("\\(\\\\\\)(" (1 "."))
+              font-lock-syntactic-keywords)))
+
 (defmodefeature c-choose-style
   (let ((filename (buffer-file-name))
         (hostname (system-name)))
@@ -73,8 +83,18 @@ block."
           ((string-match "/qemu" filename)
            (message "Setting style for qemu")
            (setq c-basic-offset 4))
+          ((string-match "/polyglot[/-]" filename)
+           (message "Setting style for Polyglot")
+           (setq c-basic-offset 4
+                 indent-tabs-mode nil))
+          ((string-match "/xtc/" filename)
+           (message "Setting style for XTC")
+           ;; This is not the style used by the XTC codebase
+           (setq c-basic-offset 4
+                 indent-tabs-mode nil))
           ((string-match "/atcc/" filename)
            (message "Setting style for RSCC/ATCC")
+           (cc-fix-slash-paren)
            (setq c-basic-offset 8
                  tab-width 8
                  indent-tabs-mode t))
