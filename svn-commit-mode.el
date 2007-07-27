@@ -50,9 +50,7 @@
 
 (defconst svn-commit-added-face 'svn-commit-added-face)
 (defface svn-commit-added-face
-  '((((class color) (background light))
-     (:foreground "green"))
-    (((class color) (background dark))
+  '((((class color))
      (:foreground "green"))
     (t (:inherit svn-commit-file-face)))
   "Face used for added files."
@@ -60,18 +58,30 @@
 
 (defconst svn-commit-modified-face 'svn-commit-modified-face)
 (defface svn-commit-modified-face
-  '((t (:foreground "yellow") (:inherit svn-commit-file-face)))
+  '((((class color))
+     (:foreground "yellow"))
+    (t (:inherit svn-commit-file-face)))
   "Face used for modified files."
   :group 'svn-commit-mode)
 
 (defconst svn-commit-deleted-face 'svn-commit-deleted-face)
 (defface svn-commit-deleted-face
-  '((((class color) (background light))
-     (:foreground "red"))
-    (((class color) (background dark))
+  '((((class color))
      (:foreground "red"))
     (t (:inherit svn-commit-file-face)))
   "Face used for removed files."
+  :group 'svn-commit-mode)
+
+(defconst svn-commit-ignore-face 'svn-commit-ignore-face)
+(defface svn-commit-ignore-face
+  '((((class color) (min-colors 9))
+     (:inherit font-lock-comment-face))
+    ;; font-lock-comment-face is completely unhelpful in low color
+    ;; situations
+    (((class color) (min-colors 8))
+     (:foreground "red"))
+    (t (:inherit font-lock-comment-face)))
+  "Face used for the ignored line in the commit message."
   :group 'svn-commit-mode)
 
 (defconst svn-commit-ignore-regexp
@@ -80,7 +90,7 @@
 ignore block.")
 
 (defvar svn-commit-font-lock-keywords
-  `((,svn-commit-ignore-regexp . font-lock-comment-face)
+  `((,svn-commit-ignore-regexp . svn-commit-ignore-face)
     ("^A[ M] [ +] .*" . svn-commit-added-face)
     ("^M[ M] [ +] .*" . svn-commit-modified-face)
     ("^D[ M] [ +] .*" . svn-commit-deleted-face)
