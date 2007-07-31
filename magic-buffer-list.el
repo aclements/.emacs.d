@@ -1302,6 +1302,11 @@ In the future, this may employ optimizations such as caching."
       (if (null magic-buffer-list-buffer-flags)
           (kill-local-variable 'magic-buffer-list-buffer-flags)))))
 
+(defun magic-buffer-list-toggle-buffer-flag (buffer flag)
+  (if (magic-buffer-list-get-buffer-flag buffer flag)
+      (magic-buffer-list-reset-buffer-flag buffer flag)
+    (magic-buffer-list-set-buffer-flag buffer flag)))
+
 (defun magic-buffer-list-get-buffer-flag (buffer flag)
   (with-current-buffer buffer
     (when (boundp 'magic-buffer-list-buffer-flags)
@@ -1352,7 +1357,7 @@ In the future, this may employ optimizations such as caching."
 (defvar magic-buffer-list-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map "q"    #'magic-buffer-list-int-expunge-and-quit)
-    (define-key map "\C-g" #'magic-buffer-list-int-expunge-and-quit)
+    (define-key map "\C-g" #'magic-buffer-list-int-quit)
     (define-key map "\C-m" #'magic-buffer-list-int-goto-selected)
     (define-key map "p"
       #'magic-buffer-list-int-beginning-of-prev-group)
@@ -1451,7 +1456,7 @@ In the future, this may employ optimizations such as caching."
   (let ((buffer (magic-buffer-list-get-prop 'buffer)))
     (if (null buffer)
         (ding)
-      (magic-buffer-list-set-buffer-flag buffer 'save)
+      (magic-buffer-list-toggle-buffer-flag buffer 'save)
       (magic-buffer-list-int-next-buffer)
       (magic-buffer-list-colorize buffer))))
 
@@ -1460,7 +1465,7 @@ In the future, this may employ optimizations such as caching."
   (let ((buffer (magic-buffer-list-get-prop 'buffer)))
     (if (null buffer)
         (ding)
-      (magic-buffer-list-set-buffer-flag buffer 'kill)
+      (magic-buffer-list-toggle-buffer-flag buffer 'kill)
       (magic-buffer-list-int-next-buffer)
       (magic-buffer-list-colorize buffer))))
 
