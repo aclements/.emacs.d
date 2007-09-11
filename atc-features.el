@@ -74,6 +74,10 @@
 
 (defmodefeature autofill
   (auto-fill-mode t))
+(defmodefeature autofill-code
+  (auto-fill-mode t)
+  (make-variable-buffer-local 'comment-auto-fill-only-comments)
+  (setq comment-auto-fill-only-comments nil))
 (defmodefeature refill
   (error "Refill isn't working right now")
   (refill-mode t)

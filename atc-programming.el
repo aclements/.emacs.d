@@ -31,6 +31,28 @@
 (add-hook 'after-save-hook
           'executable-make-buffer-file-executable-if-script-p)
 
+(setq
+ ;; Make auto-fill in programming modes on affect comments
+ comment-auto-fill-only-comments t
+ ;; When commenting a block with a block-style comment, use a single
+ ;; multi-line comment where the start and end are on their own lines
+ comment-style 'extra-line)
+
+;; Spiff up compilation mode.  It would be even cooler if the buffer
+;; automatically went away when compilation finished with no errors
+;; (or possibly never appeared if there were no errors).  See
+;; compilation-finish-functions hook.  Also, it would be nice if it
+;; automatically scrolled until it hit the first error (Use
+;; compilation-filter-hook?), or at least scrolled with the output and
+;; then jumped the point to the first error.  (compilation-next-error
+;; 1 nil (point-min)) will move point to the first error in the
+;; compilation buffer, or give a Lisp error if there are none.
+(setq compilation-window-height 10
+      compilation-context-lines 1
+      compilation-scroll-output t)
+
+(load "compile-improved.el")
+
 ;;; Set up individual language modes
 
 (require 'atc-features)
@@ -104,8 +126,16 @@
 
 (atc:autoload-mode 'latex-mode "tex-site" "\\.tex$")
 (atc:add-mode-features 'LaTeX-mode-hook
-                       '(autofill filladapt flyspell-full
+                       '(autofill-code filladapt flyspell-full
                                   latex-bindings latex-faces))
+(eval-after-load "tex"
+  '(progn
+     (add-to-list 'TeX-command-list
+                  '("Make PS" "make %f" TeX-run-compile t t)
+                  t)
+     (add-to-list 'TeX-command-list
+                  '("Rubber" "rubber %t" TeX-run-compile t t))
+     (setq TeX-command-default "Rubber")))
 
 ;;; Fix flyspell
 
