@@ -131,6 +131,9 @@ unnecessary whitespace."
   (unless emacs22                       ; Enabled by default
     (auto-compression-mode 1))
 
+  ;; Outed mode
+  (require 'outed-mode nil t)
+
   ;; Misc usability variables
   (setq load-warn-when-source-newer t
         inhibit-startup-message     t
@@ -271,6 +274,20 @@ well with `atc:setup-server'."
   (when (require 'post nil t)
     (add-hook 'post-mode-hook (function atc:post-mode-jump-cursor))))
 
+;;; Org mode
+
+(defun atc:load-org-mode ()
+  "Load a recent version of org-mode and set it up."
+  (let ((path "~/sys/elisp/extra-pre/org-5.08"))
+    (if (not (file-accessible-directory-p path))
+        (message "Failed to find recent org-mode")
+      (add-to-list 'load-path path)
+      (require 'org-install)
+      (add-to-list 'auto-mode-alist '("\\.org\\'" . org-mode))
+      (global-set-key "\C-cl" 'org-store-link)
+      (global-set-key "\C-ca" 'org-agenda)))
+  (setq org-hide-leading-stars t))
+
 ;;; Everything
 
 (defun atc:basic-setup-all ()
@@ -286,4 +303,5 @@ well with `atc:setup-server'."
   (atc:setup-global-bindings)
   (atc:setup-server)
   (atc:setup-kill-dwim)
-  (atc:setup-post-mode))
+  (atc:setup-post-mode)
+  (atc:load-org-mode))
