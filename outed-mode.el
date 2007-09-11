@@ -23,24 +23,11 @@
 ;;; Commentary:
 
 ;; This is yet another outline mode, inspired by outline-mode and
-;; org-mode.
-;;
-;; Each node is colored according to its indentation level.
-;; outed-mode supports multi-line nodes with both hard and soft
-;; newlines.  Each line of a node following the first line should
-;; either be completely empty or should start with a space (generally,
-;; it should be indented to align with the first line of the node).
-;; In buffers that use soft newlines (such as with longlines-mode),
-;; only lines following a hard newline need to be indented.
-;;
-;; outed-mode also supports simple outline editing.
-;; * M-RET creates a new sibling immediately below the current node.
-;; * RET starts a new paragraph within the current node.
-;; * M-left and M-right change the indentation level of the current
-;;   node.
+;; org-mode.  See the docstring of `outed-mode' (at the bottom of this
+;; file) for a full description.
 
 (defgroup outed nil
-  "Simple outline fontification and editing."
+  "Simple outline highlighting and editing."
   :group 'outlines)
 
 (defface outed-level-1
@@ -99,17 +86,18 @@ simply displays the leading stars in the `outed-hide' face."
   :group 'outed
   :type 'boolean)
 
-(defcustom outed-fontify-level-zero nil
-  "Non-nil to consider unindented text for fontification.
+(defcustom outed-highlight-unindented nil
+  "Non-nil to highlight unindented text using `outed-level-1'.
 
-If this is nil, then text that is not preceded by any stars (that
-is \"level 0\" text), will be displayed in the standard buffer
-face.  Otherwise, such text will be displayed using the
-`outed-level-1' face."
+If this is nil, then text that is not preceded by any
+stars (\"level 0\" text), will be displayed in the standard
+buffer face.  Otherwise, such text will be displayed using the
+`outed-level-1' face, the first level of indented text in
+`outed-level-2' and so forth."
   :group 'outed
   :type '(choice
-          (const :tag "fontify starting with top-level text" nil)
-          (const :tag "fontify starting with level 1 text" t)))
+          (const :tag "Highlight top-level text" nil)
+          (const :tag "Highlight only indented text" t)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Navigation
@@ -281,7 +269,7 @@ the numeric argument."
   (outed-increase-level (- by)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Fontification
+;;; Highlighting
 ;;;
 
 (defvar outed-faces
@@ -293,12 +281,12 @@ the numeric argument."
   (outed-beginning-of-node)
   (let ((real-start (point))
         (overlays '())
-        (outed-faces (if outed-fontify-level-zero
+        (outed-faces (if outed-highlight-unindented
                          outed-faces
                        (cons nil outed-faces))))
 
-    ;; Create fontification overlays for all nodes that overlap with
-    ;; the fontification region
+    ;; Create face overlays for all nodes that overlap with the
+    ;; font-lock region
     (while (< (point) end)
       (let* ((level (min (outed-level) (- (length outed-faces) 1)))
              (n-start (point))
@@ -384,8 +372,9 @@ the numeric argument."
     mm))
 
 (define-minor-mode outed-minor-mode
-  "Toggle outed minor mode.  This provides fontification and
-editing commands.
+  "Toggle outed minor mode.  This provides the editing commands
+and highlighting facilities of `outed-mode'.  See the mode's
+docstring for a full description of outed-mode.
 
 Interactively, with no prefix argument, toggle outed-minor-mode.
 With universal prefix ARG turn mode on.
@@ -407,6 +396,20 @@ With zero or negative ARG turn mode off.
 (define-derived-mode outed-mode text-mode
   "Outed"
   "Outed major mode for editing outlines.
+
+outed-mode provides simple outline editing commands and
+highlights each node according to its indentation level.
+
+Multiline nodes with both hard and soft newlines are supported.
+Any line following the first line of a node counts as a
+continuation line either if it beings with a space (generally, it
+should be indented to the align with the first line of the node),
+or if it a blank and there is a non-blank continuation line
+eventually following it (that is, blank lines after a node aren't
+considered part of the node).  In buffers that use soft
+newlines (such as with longlines-mode), a \"line\" is understood
+to be a soft-wrapped line that may span multiple visible lines.
+Only hard newlines are considered line separators.
 
 \\{outed-mode-map}"
 
