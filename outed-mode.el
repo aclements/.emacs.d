@@ -115,6 +115,9 @@ face.  Otherwise, such text will be displayed using the
 ;;; Navigation
 ;;;
 
+(require 'cl)
+(require 'derived)
+
 (defun outed-beginning-of-node ()
   "Move point to the first character in the heading of the
 current node."
@@ -369,11 +372,12 @@ the numeric argument."
         (overlay-put ovl 'outed t)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Minor mode
+;;; Modes
 ;;;
 
-(define-minor-mode outed-mode
-  "Toggle outed mode."
+(define-minor-mode outed-minor-mode
+  "Toggle outed minor mode.  This provides fontification and
+editing commands."
   nil
   " Outed"
   '(("\M-\r"    . outed-new-sibling)
@@ -387,5 +391,11 @@ the numeric argument."
         (t
          (jit-lock-unregister (function outed-jit-lock))
          (outed-unfontify (point-min) (point-max)))))
+
+(define-derived-mode outed-mode text-mode
+  "Outed"
+  "Outed major mode."
+
+  (jit-lock-register (function outed-jit-fontify) t))
 
 (provide 'outed-mode)
