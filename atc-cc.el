@@ -40,9 +40,7 @@ block."
     (show-context-mode 1)))
 
 (defmodefeature c-compile
-  (local-set-key "\C-c\C-c" (function compile))
-  (setq compilation-window-height 10
-        compilation-scroll-output t))
+  (local-set-key "\C-c\C-c" (function compile)))
 
 (defun streambase-style ()
   (c-set-offset 'inline-open 0)
@@ -70,7 +68,8 @@ This is not valid syntax in C, but can be in C-like languages."
 (defmodefeature c-choose-style
   (let ((filename (buffer-file-name))
         (hostname (system-name)))
-    (cond ((or (string-match "/jos/" filename)
+    (cond ((not filename))
+          ((or (string-match "/jos/" filename)
                (string-match "/6.828/" filename))
            (message "Setting style for 6.828")
            ;; (c-set-style "gnu")
@@ -87,7 +86,7 @@ This is not valid syntax in C, but can be in C-like languages."
            (message "Setting style for Polyglot")
            (setq c-basic-offset 4
                  indent-tabs-mode nil))
-          ((string-match "/xtc/" filename)
+          ((string-match "/xtc/pub/xtc" filename)
            (message "Setting style for XTC")
            ;; This is not the style used by the XTC codebase
            (setq c-basic-offset 4
@@ -95,6 +94,7 @@ This is not valid syntax in C, but can be in C-like languages."
           ((string-match "/atcc/" filename)
            (message "Setting style for RSCC/ATCC")
            (cc-fix-slash-paren)
+           (c-set-style "bsd")
            (setq c-basic-offset 8
                  tab-width 8
                  indent-tabs-mode t))
@@ -110,13 +110,9 @@ This is not valid syntax in C, but can be in C-like languages."
 
 ;;; Set up the mode itself
 
-;; A lot of .h files are actually C++
-(defun assoc-set-or-add (alist-var key value)
-  (let ((pair (assoc key (symbol-value alist-var))))
-    (if pair
-        (setcdr pair value)
-      (add-to-list alist-var (list key value)))))
-(assoc-set-or-add 'auto-mode-alist "\\.h\\'" (function c++-mode))
+;; A lot of .h files are actually C++.  It would be really cool if
+;; this could guess, based on other files in the directory.
+(add-to-list 'auto-mode-alist (cons "\\.h\\'" (function c++-mode)))
 
 ;; Set C's features
 (atc:add-mode-features 'c-mode-common-hook
