@@ -28,7 +28,7 @@
 
 ;; TODO
 
-;; * Enter should introduce a new sibling.
+;; * Fix binding of RET
 
 (defgroup outed nil
   "Simple outline highlighting and editing."
@@ -370,8 +370,8 @@ the numeric argument."
 
 (defvar outed-mode-map
   (let ((mm (make-sparse-keymap)))
-    (define-key mm "\M-\r"    (function outed-new-sibling))
-    (define-key mm "\r"       (function outed-new-paragraph))
+    (define-key mm "\M-\r"    (function outed-new-paragraph))
+    (define-key mm "\r"       (function outed-new-sibling))
     (define-key mm [\M-right] (function outed-increase-level))
     (define-key mm [\M-left]  (function outed-decrease-level))
     mm))
