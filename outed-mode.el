@@ -26,6 +26,10 @@
 ;; org-mode.  See the docstring of `outed-mode' (at the bottom of this
 ;; file) for a full description.
 
+;; TODO
+
+;; * Enter should introduce a new sibling.
+
 (defgroup outed nil
   "Simple outline highlighting and editing."
   :group 'outlines)
@@ -145,8 +149,9 @@ current node."
       (when (eobp)
         (throw 'done t))
       ;; Is this a continuation line?
-      (when (not (eql (char-after (point)) ?\ ))
-          (throw 'done t)))))
+      (unless (or (eql (char-after (point)) ?\ )
+                  (eolp))
+        (throw 'done t)))))
 
 (defun outed-end-of-node ()
   "Move point to the last character of the current node."
