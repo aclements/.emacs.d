@@ -375,17 +375,29 @@ the numeric argument."
 ;;; Modes
 ;;;
 
+(defvar outed-mode-map
+  (let ((mm (make-sparse-keymap)))
+    (define-key mm "\M-\r"    (function outed-new-sibling))
+    (define-key mm "\r"       (function outed-new-paragraph))
+    (define-key mm [\M-right] (function outed-increase-level))
+    (define-key mm [\M-left]  (function outed-decrease-level))
+    mm))
+
 (define-minor-mode outed-minor-mode
   "Toggle outed minor mode.  This provides fontification and
-editing commands."
-  nil
-  " Outed"
-  '(("\M-\r"    . outed-new-sibling)
-    ("\r"       . outed-new-paragraph)
-    ([\M-right] . outed-increase-level)
-    ([\M-left]  . outed-decrease-level))
+editing commands.
 
-  (cond (outed-mode
+Interactively, with no prefix argument, toggle outed-minor-mode.
+With universal prefix ARG turn mode on.
+With zero or negative ARG turn mode off.
+
+\\{outed-mode-map}"
+
+  :init-value nil
+  :lighter    " Outed"
+  :keymap     outed-mode-map
+
+  (cond (outed-minor-mode
          (outed-unfontify (point-min) (point-max))
          (jit-lock-register (function outed-jit-fontify) t))
         (t
@@ -394,7 +406,9 @@ editing commands."
 
 (define-derived-mode outed-mode text-mode
   "Outed"
-  "Outed major mode."
+  "Outed major mode for editing outlines.
+
+\\{outed-mode-map}"
 
   (jit-lock-register (function outed-jit-fontify) t))
 
