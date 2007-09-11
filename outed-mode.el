@@ -130,9 +130,9 @@ current node."
       ;; An empty line or a line that begins with a space is a
       ;; continuation, otherwise, it either begins with stars, so its
       ;; a subnode, or text, in which case its a root node
-      (unless (or (eolp)
-                  (= (char-after (point)) ?\ ))
-          (throw 'done t))
+      (when (or (bobp)
+                (not (eql (char-after (point)) ?\ )))
+        (throw 'done t))
       (forward-line -1))))
 
 (defun outed-forward-soft-line ()
@@ -154,8 +154,7 @@ current node."
       (when (eobp)
         (throw 'done t))
       ;; Is this a continuation line?
-      (unless (or (eolp)
-                  (= (char-after (point)) ?\ ))
+      (when (not (eql (char-after (point)) ?\ ))
           (throw 'done t)))))
 
 (defun outed-end-of-node ()
@@ -175,7 +174,7 @@ current node."
 (defun outed-level ()
   (save-excursion
     (outed-beginning-of-node)
-    (if (= (char-after (point)) ?\*)
+    (if (eql (char-after (point)) ?\*)
         (let ((begin (point))
               (end (progn (skip-chars-forward "*")
                           (point))))
@@ -266,7 +265,7 @@ the numeric argument."
                (while (< (point) end)
                  (let ((deln deln))
                    (while (and (> deln 0)
-                               (= (char-after (point)) ?\ ))
+                               (eql (char-after (point)) ?\ ))
                      (delete-char 1)
                      (setq deln (- deln 1))))
                  (outed-forward-soft-line))))))))
