@@ -40,6 +40,9 @@
 
 ;;; Code:
 
+(defgroup svn-commit-mode nil
+  "Mode for editing Subversion commit messages.")
+
 (defconst svn-commit-file-face 'svn-commit-file-face)
 (defface svn-commit-file-face
   '((((class color) (background dark))
@@ -97,16 +100,32 @@ ignore block.")
     ("^[ AMD]M [ +] .*" . svn-commit-modified-face)))
 
 ;; Customizable variables
-(defvar svn-commit-offer-to-restore t
-  "When a commit message is loaded, check if an old commit message was
+(defcustom svn-commit-offer-to-restore t
+  "Offer to restore the contents of failed commit messages.
+
+When a commit message is loaded, check if an old commit message was
 left over by a earlier failed commit and offer to restore its contents
-in this commit message.")
-(defvar svn-commit-show-old-message t
-  "While offering to restore an old commit message, split the window
-and display the old commit message.")
-(defvar svn-commit-delete-old-message t
-  "If an old commit message was restored, offer to delete the old
-commit message file when this commit message is saved.")
+into this commit message."
+  :type 'boolean
+  :group 'svn-commit-mode)
+(defcustom svn-commit-show-old-message t
+  "Display the old commit message when offering to restore it.
+
+While offering to restore an old commit message, split the window
+and display the old commit message."
+  :type 'boolean
+  :group 'svn-commit-mode)
+(defcustom svn-commit-delete-old-message t
+  "Delete the old commit message on save.
+
+If an old commit message was restored, offer to delete the old
+commit message file when this commit message is saved.  If 'auto,
+then don't bother prompting."
+  :type '(choice
+          (const :tag "Don't delete" nil)
+          (const :tag "Offer to delete" t)
+          (const :tag "Automatically delete" auto))
+  :group 'svn-commit-mode)
 (defcustom svn-commit-mode-hook nil
   "Normal hook run when entering svn commit mode."
   :type 'hook
@@ -116,9 +135,9 @@ commit message file when this commit message is saved.")
 (defvar svn-commit-restored-filename nil
   "If this commit message was restored from an old commit message,
 this contains the filename of the commit message it was restored
-from.  This is used to offer to delete the old message when this
-message is saved.  nil if there was no restoration (or if the old
-message has been deleted).")
+from.  This is used to delete the old message when this message
+is saved.  nil if there was no restoration (or if the old message
+has been deleted).")
 (make-variable-buffer-local 'svn-commit-mode)
 
 (define-derived-mode svn-commit-mode text-mode "SVN-Commit"
@@ -165,12 +184,7 @@ message has been deleted).")
                              (let ((last-nonmenu-event t))
                                (call-interactively
                                 (function
-                                 svn-load-old-commit-message))))))
-
-  ;; Delete the old commit message when this one is saved
-  (if svn-commit-delete-old-message
-      (add-hook 'after-save-hook
-                (function svn-delete-old-commit-message))))
+                                 svn-load-old-commit-message)))))))
 
 (defadvice fill-paragraph (around svn-ignore-lines)
   "If in svn-commit-mode, cause paragraph filling to not extend to the
@@ -241,9 +255,11 @@ found, or nil otherwise."
 
 (defun svn-load-old-commit-message (filename)
   "Load the contents of an old commit message into this commit
-message.  When called interactively, looks for old commit messages
-and, if found, prompts the user to restore the old message.  The name
-of the old message is remembered so it can be deleted later by
+message.  When called interactively, looks for old commit
+messages and, if found, prompts the user to restore the old
+message.  The user is also prompted for whether or not they want
+to delete the old message.  If so, then the name of the old
+message is remembered so it can be deleted later by the save hook
 `svn-delete-old-commit-message'."
   ;; If there is an old commit message, prompt to restore it
   (interactive
@@ -277,21 +293,24 @@ of the old message is remembered so it can be deleted later by
                    (match-beginning 0)
                  (point-max))))))
       (insert contents)
-      (setq svn-commit-restored-filename filename))))
+      (when (and svn-commit-delete-old-message
+                 (or (eq svn-commit-delete-old-message 'auto)
+                     (yes-or-no-p
+                      (format "Delete old commit message %s on save? "
+                              filename))))
+        (setq svn-commit-restored-filename filename)
+        (add-hook 'after-save-hook
+                  (function svn-delete-old-commit-message))))))
 
-(defun svn-delete-old-commit-message (&optional force)
+(defun svn-delete-old-commit-message ()
   "If this buffer was restored from an old commit message by
-`svn-load-old-commit-message', then prompt the user to delete the old
-commit message and delete it.  If force is non-nil, don't prompt the
-user."
+`svn-load-old-commit-message', then delete the old commit
+message."
   (interactive)
-  ;; If we're in a commit mode buffer that was restored from an old
-  ;; message, prompt the user about deleting the old message
+  ;; Are we in a commit mode buffer that was restored from an old
+  ;; message?
   (when (and (eq major-mode 'svn-commit-mode)
-             svn-commit-restored-filename
-             (or force
-                 (yes-or-no-p (format "Delete old commit message %s? "
-                                      svn-commit-restored-filename))))
+             svn-commit-restored-filename)
     ;; Delete it
     (delete-file svn-commit-restored-filename)
     (setq svn-commit-restored-filename nil)))
