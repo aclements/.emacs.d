@@ -28,9 +28,14 @@
 
 ;; TODO
 
+;; * Indentation cycling for multiparagraph nodes is broken
+;; * Backspace at the beginning of a continuation line should be
+;;   hungry.  Backspace in other places should probably have meaning,
+;;   too.
 ;; * Fix binding of RET
 ;; * Bind tab properly
 ;; * outed-increase-subtree-level
+;; * Make S-TAB the inverse of TAB
 
 (defgroup outed nil
   "Simple outline highlighting and editing."
@@ -119,6 +124,7 @@ current node."
   (forward-line 0)
   (catch 'done
     (while t
+      (outed-forward-soft-line 0)
       (when (bobp)
         (throw 'done t))
       (unless (outed-continuation-p)
@@ -136,44 +142,81 @@ current node."
       (when (eobp)
         (throw 'done t))
       ;; Is this a continuation line?
-      (unless (outed-continuation-p)
+      (unless (or (outed-continuation-p)
+                  (eolp))
         (throw 'done t)))))
 
 (defun outed-end-of-node ()
   "Move point to the end of the current node."
   (interactive)
   (outed-next-node)
-  (when (not (eobp))
+  (when (and (not (eobp)) (not (bobp)))
     (backward-char))
   ;; Move backwards over blank lines
-  (while (and (eolp) (bolp))
+  (while (and (eolp) (bolp) (not (bobp)))
     (backward-char)))
 
-(defun outed-beginning-of-soft-line ()
-  ;; Find the beginning of the soft-wrapped line under point
-  (forward-line 0)
-  (while (not (or (not use-hard-newlines)
-                  (bobp)
-                  (get-text-property (- (point) 1) 'hard)))
-    (forward-line -1)))  
-
-(defun outed-forward-soft-line ()
-  ;; Find the end of the soft-wrapped line under point
-  (forward-line 1)
-  (while (not (or (not use-hard-newlines)
-                  (eobp)
-                  (get-text-property (- (point) 1) 'hard)))
-    (forward-line 1)))
+(defun outed-forward-soft-line (&optional amt)
+  (or amt (setq amt 1))
+  (cond ((not use-hard-newlines)
+         ;; If there are no soft lines, just use `forward-line'
+         (forward-line amt))
+        ((<= amt 0)
+         ;; Move backwards
+         (forward-line 0)
+         (while (<= amt 0)
+           ;; Find the beginning of the soft-wrapped line under point
+           (while (not (or (bobp)
+                           (get-text-property (- (point) 1) 'hard)))
+             (forward-line -1))
+           ;; Move to the previous line unless we're done
+           (if (< amt 0)
+               (forward-line -1))
+           (setq amt (+ 1 amt))))
+        (t
+         ;; Move forwards
+         (while (> amt 0)
+           ;; Start at the beginning of the next line
+           (forward-line 1)
+           ;; Find the beginning of the next soft-wrapped line
+           (while (not (or (eobp)
+                           (get-text-property (- (point) 1) 'hard)))
+             (forward-line 1))
+           (setq amt (- amt 1))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Parsing
 ;;;
 
 (defun outed-continuation-p ()
+  "Returns t if and only if the soft line under point is a
+continuation line."
   (save-excursion
-    (outed-beginning-of-soft-line)
-    (or (eolp)
-        (eql (char-after (point)) ?\ ))))
+    (outed-forward-soft-line 0)
+    (cond ((eql (char-after (point)) ?\*)
+           ;; Headings are never continuation lines
+           nil)
+          ((eql (char-after (point)) ?\ )
+           ;; Indented lines are always continuation lines
+           t)
+          ((eolp)
+           ;; Blank lines are continuation lines unless the non-blank
+           ;; preceded line is level 0
+           (while (and (eolp) (not (bobp)))
+             (outed-forward-soft-line -1))
+           (let ((ch (char-after (point))))
+             (or (eql ch ?\*) (eql ch ?\ ))))
+          (t
+           ;; Level 0 lines are continuation lines unless immediately
+           ;; preceded by a blank line, header, or non-level 0
+           ;; continuation
+           (if (bobp)
+               nil
+             (outed-forward-soft-line -1)
+             (let ((ch (char-after (point))))
+               (not (or (eolp)
+                        (eql ch ?\*)
+                        (eql ch ?\ )))))))))
 
 (defun outed-level ()
   (save-excursion
@@ -303,53 +346,119 @@ A root node will be indented to be continuation line under the
 preceding node.  Continuation lines will be made into siblings of
 the preceding node."
 
-  ;; XXX This has one problem: If a multiparagraph node gets cycled to
-  ;; the top level, then the connection between the paragraphs gets
-  ;; lost.  This is acceptable if the command isn't being repeated,
-  ;; but shouldn't happen for a repeated command.
+  ;; XXX This has one problem: If a multiline node gets cycled to the
+  ;; top level, then the connection between the paragraphs gets lost.
+  ;; This is acceptable if the command isn't being repeated, but
+  ;; shouldn't happen for a repeated command.
   (interactive)
   (save-excursion
-    (outed-beginning-of-soft-line)
-    (let* ((repeat (eq last-command 'outed-cycle-indent))
-           (contp (outed-continuation-p))
-           (level (outed-level))
-           (prev-level (if contp
-                           level
-                         (save-excursion
-                           (outed-beginning-of-node)
-                           (if (bobp)
-                               0
-                             (backward-char)
-                             (outed-level))))))
-      ;; Always start by indenting
-      (when (not repeat)
-        (setq outed-cycle-direction 'in))
-      ;; Don't indent more than one level beyond the previous node
-      (when (and (eq outed-cycle-direction 'in)
-                 (>= level (+ 1 prev-level)))
-        (setq outed-cycle-direction 'out))
-      ;; If we're trying to outdent, but we've hit the top level
-      ;; (either we have text at the top level, or this is a blank
-      ;; continuation line [in which case level is useless]), then
-      ;; switch back to indenting.
-      (when (and (eq outed-cycle-direction 'out)
-                 (or (= level 0)
-                     (and contp (eolp))))
-        (setq outed-cycle-direction 'in))
+    (save-restriction
+      (outed-forward-soft-line 0)
+      (let* ((repeat (eq last-command 'outed-cycle-indent))
+             (contp (outed-continuation-p))
+             (level (outed-level))
+             (prev-level (if contp
+                             level
+                           (save-excursion
+                             (outed-beginning-of-node)
+                             (if (bobp)
+                                 0
+                               (backward-char)
+                               (outed-level)))))
+             (end (save-excursion
+                    (outed-end-of-node)
+                    (point))))
+        ;; Ensure that we can't get confused by earlier lines (for
+        ;; example, without this, increase-level may try to move
+        ;; point up)
+        (narrow-to-region (point) end)
+        ;; Always start by indenting
+        (when (not repeat)
+          (setq outed-cycle-direction 'in))
+        ;; Don't indent more than one level beyond the previous node
+        (when (and (eq outed-cycle-direction 'in)
+                   (>= level (+ 1 prev-level)))
+          (setq outed-cycle-direction 'out))
+        ;; If we're trying to outdent, but we've hit the top level
+        ;; (either we have text at the top level, or this is a blank
+        ;; continuation line [in which case level is useless]), then
+        ;; switch back to indenting.
+        (when (and (eq outed-cycle-direction 'out)
+                   (or (= level 0)
+                       (and contp (eolp))))
+          (setq outed-cycle-direction 'in))
 
-      (cond (contp
-             ;; Make this a sibling to the node it is currently in
-             (delete-horizontal-space)
-             (insert-before-markers (outed-make-heading level)))
-            ((and (= level 0) (/= prev-level 0))
-             ;; Make this a continuation line of the previous node
-             (insert-before-markers (outed-make-continuation prev-level)))
-            ((eq outed-cycle-direction 'in)
-             ;; Indent
-             (outed-increase-level))
-            ((eq outed-cycle-direction 'out)
-             ;; Outdent
-             (outed-decrease-level))))))
+        (cond ((and contp (/= level 0))
+               ;; Make this a sibling to the node it is currently in
+               (delete-horizontal-space)
+               (insert-before-markers (outed-make-heading level)))
+              ((and (= level 0) (/= prev-level 0))
+               ;; Indent the rest of this node to make it a
+               ;; continuation of the previous node
+               (let ((indent (outed-make-continuation prev-level)))
+                 (while (not (eobp))
+                   ;; Leave blank lines blank
+                   (unless (eolp)
+                     (insert-before-markers indent))
+                   (outed-forward-soft-line))))
+              ((eq outed-cycle-direction 'in)
+               ;; Indent
+               (outed-increase-level))
+              ((eq outed-cycle-direction 'out)
+               ;; Outdent
+               (outed-decrease-level)))))))
+
+(defun outed-fill-paragraph (&optional justify)
+  (interactive)
+  (save-excursion
+    (save-restriction
+      ;; Find the beginning and end of the paragraph
+      (let ((start (progn
+                     (forward-line 0)
+                     (while (and (outed-continuation-p)
+                                 (not (eolp))
+                                 (not (bobp)))
+                       (forward-line -1))
+                     (point)))
+            (level (outed-level))
+            (end (progn
+                   (forward-line)
+                   (while (and (outed-continuation-p)
+                               (not (eolp))
+                               (not (eobp)))
+                     (forward-line))
+                   (point))))
+        (narrow-to-region start end)
+        (goto-char start)
+        ;; Is this a heading or a subparagraph?  Compute the
+        ;; indentation for the first and remaining lines accordingly.
+        (let* ((has-heading (not (outed-continuation-p)))
+               (indent2 (outed-make-continuation level))
+               (indent1 (if has-heading
+                            (outed-make-heading level)
+                          indent2)))
+          ;; Nuke the stars
+          (when has-heading
+            (delete-region start
+                           (progn
+                             (skip-chars-forward "*")
+                             (point))))
+          ;; Nuke all leading whitespace
+          (while (not (eobp))
+            (delete-horizontal-space)
+            (forward-line))
+          ;; Actually fill the region, using the appropriate margin
+          (let ((fill-paragraph-function nil)
+                (left-margin (length indent1)))
+            (fill-region-as-paragraph (point-min) (point-max) justify))
+          ;; If the region used to start with a heading, put the stars
+          ;; back.
+          (when has-heading
+            (goto-char (point-min))
+            (delete-horizontal-space)
+            (insert indent1))
+          ;; Inhibit further filling this paragraph
+          t)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Highlighting
@@ -446,6 +555,9 @@ the preceding node."
 ;;; Modes
 ;;;
 
+(defvar outed-mode nil)
+(make-variable-buffer-local 'outed-mode)
+
 (defvar outed-mode-map
   (let ((mm (make-sparse-keymap)))
     (define-key mm "\M-\r"    (function outed-new-sibling))
@@ -458,7 +570,9 @@ the preceding node."
 (define-minor-mode outed-minor-mode
   "Toggle outed minor mode.  This provides the editing commands
 and highlighting facilities of `outed-mode'.  See the mode's
-docstring for a full description of outed-mode.
+docstring for a full description of outed-mode.  Unlike the major
+mode, this does not redefine paragraph boundaries or filling
+rules.
 
 Interactively, with no prefix argument, toggle outed-minor-mode.
 With universal prefix ARG turn mode on.
@@ -471,9 +585,11 @@ With zero or negative ARG turn mode off.
   :keymap     outed-mode-map
 
   (cond (outed-minor-mode
+         (setq outed-mode t)
          (outed-unfontify (point-min) (point-max))
          (jit-lock-register (function outed-jit-fontify) t))
         (t
+         (setq outed-mode nil)
          (jit-lock-unregister (function outed-jit-lock))
          (outed-unfontify (point-min) (point-max)))))
 
@@ -495,8 +611,26 @@ newlines (such as with longlines-mode), a \"line\" is understood
 to be a soft-wrapped line that may span multiple visible lines.
 Only hard newlines are considered line separators.
 
+outed-mode defines paragraph boundaries so as not to cross node
+boundaries.  Paragraph filling is node-aware and will
+appropriately indent the paragraph to the level of the node.
+
 \\{outed-mode-map}"
 
-  (jit-lock-register (function outed-jit-fontify) t))
+  (jit-lock-register (function outed-jit-fontify) t)
+
+  ;; Each node counts as a paragraph.  This also has the effect of
+  ;; making sentences not cross node boundaries.
+  (make-local-variable 'paragraph-start)
+  (setq paragraph-start (concat paragraph-start "\\|\\(?:\\*+\\)"))
+  (make-local-variable 'paragraph-separate)
+  (setq paragraph-separate "[ \t\f]*$")
+
+  ;; Fill correctly
+  (make-local-variable 'fill-paragraph-function)
+  (setq fill-paragraph-function (function outed-fill-paragraph))
+
+  ;; Disable filladapt.  It breaks everything.
+  (setq fill-prefix ""))
 
 (provide 'outed-mode)
