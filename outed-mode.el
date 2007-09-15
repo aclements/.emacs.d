@@ -149,12 +149,13 @@ current node."
 (defun outed-end-of-node ()
   "Move point to the end of the current node."
   (interactive)
-  (outed-next-node)
-  (when (and (not (eobp)) (not (bobp)))
-    (backward-char))
-  ;; Move backwards over blank lines
-  (while (and (eolp) (bolp) (not (bobp)))
-    (backward-char)))
+  (let ((start (point)))
+    (outed-next-node)
+    (when (and (not (eobp)) (not (bobp)) (> (point) start))
+      (backward-char))
+    ;; Move backwards over blank lines
+    (while (and (eolp) (bolp) (not (bobp)) (> (point) start))
+      (backward-char))))
 
 (defun outed-forward-soft-line (&optional amt)
   (or amt (setq amt 1))

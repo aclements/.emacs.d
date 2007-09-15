@@ -62,6 +62,16 @@
 ;;; Utilities
 ;;;
 
+(defmacro forall-points (var &rest body)
+  `(progn
+     (goto-char (point-min))
+     (while (not (eobp))
+       (setq ,var (point))
+       ,@body
+       (goto-char (+ ,var 1)))
+     (setq ,var (point))
+     ,@body))
+
 (defun fill-buffer (&rest lines)
   (let ((goto nil))
     (dolist (l lines)
@@ -132,8 +142,7 @@
             (lambda (soft)
               (longlines-mode soft)
               (let ((res '()))
-                (dotimes (p (point-max))
-                  (goto-char p)
+                (forall-points p
                   (dolist (amt '(-2 -1 0 1 2))
                     (save-excursion
                       (outed-forward-soft-line amt)
@@ -143,6 +152,52 @@
           (with-hard (car results))
           (with-soft (cadr results)))
      (compare-lists with-hard with-soft))))
+
+(defun outed-test-movement ()
+  (interactive)
+  (let ((test-lines '("" "" "A" "B"
+                      "* C" "  D" "  E" "" "  F" "  G"
+                      "** H" "   I"
+                      "* J"
+                      "K" "L"
+                      ""
+                      "* M"
+                      ""
+                      "N" "O"
+                      "" "")))
+    (dolist (func '(outed-beginning-of-node outed-end-of-node))
+      (outed-test
+       (list func 'idempotent)
+
+       (apply 'fill-buffer test-lines)
+       (let ((expect '()) (actual '()))
+         (forall-points p
+           (funcall func)
+           (push `(from ,p to ,(point)) expect)
+           (funcall func)
+           (push `(from ,p to ,(point)) actual))
+         (compare-lists (reverse expect) (reverse actual)))))
+
+    (dolist (func '((outed-beginning-of-node <= >   <= >)
+                    (outed-end-of-node       >= <   >= <)
+                    (outed-next-node         >  <=  =  /=)))
+      (outed-test
+       (list (car func) 'direction)
+
+       (apply 'fill-buffer test-lines)
+       (let ((expect '()) (actual '()))
+         (forall-points p
+           (let ((cmp (if (eobp) (fourth func) (second func)))
+                 (opp (if (eobp) (fifth func)  (third func))))
+             (funcall (car func))
+             (push `(moved ,cmp from ,p) expect)
+             (push `(moved ,(if (funcall cmp (point) p) cmp opp)
+                           from ,p) actual)))
+         (compare-lists (reverse expect) (reverse actual)))))
+
+    ;; Actually check the positions moved to from each point (break
+    ;; down starting points into regions)
+    ))
 
 (defun outed-test-continuation-p ()
   (interactive)
