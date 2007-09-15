@@ -413,27 +413,29 @@ the preceding node."
   (save-excursion
     (save-restriction
       ;; Find the beginning and end of the paragraph
-      (let ((start (progn
-                     (forward-line 0)
-                     (while (and (outed-continuation-p)
-                                 (not (eolp))
-                                 (not (bobp)))
-                       (forward-line -1))
-                     (point)))
-            (level (outed-level))
-            (end (progn
-                   (forward-line)
-                   (while (and (outed-continuation-p)
-                               (not (eolp))
-                               (not (eobp)))
-                     (forward-line))
-                   (point))))
+      (let* ((start (progn
+                      (forward-line 0)
+                      (while (and (outed-continuation-p)
+                                  (not (eolp))
+                                  (not (bobp)))
+                        (forward-line -1))
+                      (point)))
+             (level (outed-level))
+             (end (progn
+                    (forward-line)
+                    (while (and (outed-continuation-p)
+                                (not (eolp))
+                                (not (eobp)))
+                      (forward-line))
+                    (point)))
+             ;; Is this a heading or a subparagraph?
+             (has-heading (progn
+                            (goto-char start)
+                            (not (outed-continuation-p)))))
         (narrow-to-region start end)
-        (goto-char start)
-        ;; Is this a heading or a subparagraph?  Compute the
-        ;; indentation for the first and remaining lines accordingly.
-        (let* ((has-heading (not (outed-continuation-p)))
-               (indent2 (outed-make-continuation level))
+        ;; Compute the indentation for the first and remaining lines
+        ;; accordingly.
+        (let* ((indent2 (outed-make-continuation level))
                (indent1 (if has-heading
                             (outed-make-heading level)
                           indent2)))

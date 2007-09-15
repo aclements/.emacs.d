@@ -5,7 +5,8 @@
   (interactive)
   (outed-test-forward-soft-line)
   (outed-test-continuation-p)
-  (outed-test-cycle-indent))
+  (outed-test-cycle-indent)
+  (outed-test-fill-paragraph))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Testing system
@@ -69,21 +70,34 @@
         (insert l)
         (newline)))
     (when goto
-      (goto-char goto))))
+      (goto-char goto))
+    (when (boundp 'moved-point)
+      (setq moved-point (not (null goto))))))
+
+(defun check-buffer (&rest lines)
+  (let* ((moved-point nil)
+         (expect2 (with-temp-buffer
+                    (apply 'fill-buffer lines)
+                    (list (get-buffer-lines) (point))))
+         (expect (car expect2))
+         (actual (get-buffer-lines)))
+    (when moved-point
+      (compare `(point at ,(cadr expect2)) `(point at ,(point))))
+    (compare-lists expect actual)))
 
 (defun line-following-point ()
   (save-excursion
     (buffer-substring (point)
                       (progn (end-of-line) (point)))))
 
-(defun check-buffer (&rest lines)
-  (let ((actual '()))
+(defun get-buffer-lines ()
+  (let ((lines '()))
     (save-excursion
       (goto-char (point-min))
       (while (not (eobp))
-        (push (line-following-point) actual)
+        (push (line-following-point) lines)
         (forward-line)))
-    (compare-lists lines (reverse actual))))
+    (reverse lines)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Tests
@@ -110,7 +124,9 @@
    (outed-mode)
 
    ;; Try soft and hard line wraps, moving by -2, -1, 0, 1, 2 from each
-   ;; point and gather lists of results up
+   ;; point and gather lists of results up.  Check the property that
+   ;; outed-forward-soft-line moves point in the same way regardless
+   ;; of whether the lines are unwrapped or soft wrapped.
    (let* ((results
            (mapcar
             (lambda (soft)
@@ -241,4 +257,42 @@
      (setq last-command 'outed-cycle-indent)
      (check-buffer "A" e)
      (compare "B" (line-following-point))))
+  )
+
+(defun outed-test-fill-paragraph ()
+  (interactive)
+  (outed-test
+   '(fill-paragraph level-1-bullet)
+   (fill-buffer "A" "* B" 'point "  B" "  B" "" "  C" "  C")
+   (outed-mode)
+   (fill-paragraph nil)
+   (check-buffer "A" "* B B B" "" "  C" "  C"))
+
+  (outed-test
+   '(fill-paragraph level-1-paragraph)
+   (fill-buffer  "A" "* B" "  B" "" "  C" 'point "  C" "  C" "" "  D" "  D")
+   (outed-mode)
+   (fill-paragraph nil)
+   (check-buffer "A" "* B" "  B" "" "  C C C" "" "  D" "  D"))
+
+  (outed-test
+   '(fill-paragraph level-1-bullet-reformat)
+   (fill-buffer "A" "* B" 'point " B" "     B" "" "  C")
+   (outed-mode)
+   (fill-paragraph nil)
+   (check-buffer "A" "* B B B" "" "  C"))
+
+  (outed-test
+   '(fill-paragraph level-1-paragraph-reformat)
+   (fill-buffer "A" "* B" "  B" "" " C" 'point "  C" "    C" "" "  D")
+   (outed-mode)
+   (fill-paragraph nil)
+   (check-buffer "A" "* B" "  B" "" "  C C C" "" "  D"))
+
+  (outed-test
+   '(fill-paragraph level-0)
+   (fill-buffer "A" "A" "" "B" 'point "B" "B" "" "C" "C")
+   (outed-mode)
+   (fill-paragraph nil)
+   (check-buffer "A" "A" "" "B B B" "" "C" "C"))
   )
