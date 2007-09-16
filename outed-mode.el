@@ -29,9 +29,6 @@
 ;; TODO
 
 ;; * Indentation cycling for multiparagraph nodes is broken
-;; * Backspace at the beginning of a continuation line should be
-;;   hungry.  Backspace in other places should probably have meaning,
-;;   too.
 ;; * Fix binding of RET
 ;; * Bind tab properly
 ;; * outed-increase-subtree-level
@@ -279,8 +276,7 @@ heading."
         
         ;; Finally, insert the appropriate amount of indentation
         (newline)
-        (when (> level 0)
-          (insert (make-string (+ 1 level) ?\ )))))))
+        (insert (outed-make-continuation level))))))
 
 (defun outed-increase-level (&optional by)
   "Increase (or decrease) the indentation level of the current
@@ -413,6 +409,20 @@ the preceding node."
               ((eq outed-cycle-direction 'out)
                ;; Outdent
                (outed-decrease-level)))))))
+
+(defun outed-hungry-backspace (&optional n)
+  "If nothing separates point from the beginning of line except
+whitespace, delete all of that whitespace.  Otherwise, behave
+like `delete-backward-char'."
+  (interactive "p")
+  (or n (setq n 1))
+  (if (and (= n 1)
+           (not (bolp))
+           (save-excursion
+             (skip-chars-backward " ")
+             (bolp)))
+      (delete-horizontal-space t)
+    (delete-backward-char 1)))
 
 (defun outed-fill-paragraph (&optional justify)
   (interactive)
@@ -568,11 +578,12 @@ the preceding node."
 
 (defvar outed-mode-map
   (let ((mm (make-sparse-keymap)))
-    (define-key mm "\M-\r"    (function outed-new-sibling))
-    (define-key mm "\r"       (function outed-new-paragraph))
-    (define-key mm [\M-right] (function outed-increase-level))
-    (define-key mm [\M-left]  (function outed-decrease-level))
-    (define-key mm [tab]      (function outed-cycle-indent))
+    (define-key mm "\M-\r"     (function outed-new-sibling))
+    (define-key mm "\r"        (function outed-new-paragraph))
+    (define-key mm [\M-right]  (function outed-increase-level))
+    (define-key mm [\M-left]   (function outed-decrease-level))
+    (define-key mm [tab]       (function outed-cycle-indent))
+    (define-key mm [backspace] (function outed-hungry-backspace))
     mm))
 
 (define-minor-mode outed-minor-mode
