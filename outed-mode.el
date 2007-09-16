@@ -357,15 +357,17 @@ the preceding node."
       (outed-forward-soft-line 0)
       (let* ((repeat (eq last-command 'outed-cycle-indent))
              (contp (outed-continuation-p))
-             (level (outed-level))
-             (prev-level (if contp
-                             level
-                           (save-excursion
-                             (outed-beginning-of-node)
-                             (if (bobp)
-                                 0
-                               (backward-char)
-                               (outed-level)))))
+             (blank (eolp))
+             (level (if blank 0 (outed-level)))
+             (prev-level (cond (blank (outed-level))
+                               (contp level)
+                               (t
+                                (save-excursion
+                                  (outed-beginning-of-node)
+                                  (if (bobp)
+                                      0
+                                    (backward-char)
+                                    (outed-level))))))
              (end (save-excursion
                     (outed-end-of-node)
                     (point))))
@@ -393,6 +395,9 @@ the preceding node."
                ;; Make this a sibling to the node it is currently in
                (delete-horizontal-space)
                (insert-before-markers (outed-make-heading level)))
+              ((and blank (/= prev-level 0))
+               ;; Indent to the level of a continuation
+               (insert-before-markers (outed-make-continuation prev-level)))
               ((and (= level 0) (/= prev-level 0))
                ;; Indent the rest of this node to make it a
                ;; continuation of the previous node

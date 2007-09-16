@@ -4,6 +4,7 @@
 (defun outed-test-all ()
   (interactive)
   (outed-test-forward-soft-line)
+  (outed-test-movement)
   (outed-test-continuation-p)
   (outed-test-cycle-indent)
   (outed-test-fill-paragraph))
@@ -73,12 +74,25 @@
      ,@body))
 
 (defun fill-buffer (&rest lines)
+  (delete-region (point-min) (point-max))
   (let ((goto nil))
-    (dolist (l lines)
-      (if (eq l 'point)
-          (setq goto (point))
-        (insert l)
-        (newline)))
+    (flet ((fill (newlines lines)
+             (dolist (l lines)
+               (cond ((null l)
+                      t)
+                     ((eq l 'point)
+                      (setq goto (point)))
+                     ((consp l)
+                      (fill nil l)
+                      (when newlines
+                        (newline)))
+                     ((char-or-string-p l)
+                      (insert l)
+                      (when newlines
+                        (newline)))
+                     (t
+                      (error "fill-buffer: Unknown type %s" l))))))
+      (fill t lines))
     (when goto
       (goto-char goto))
     (when (boundp 'moved-point)
@@ -250,68 +264,81 @@
 
 (defun outed-test-cycle-indent ()
   (interactive)
-  (outed-test
-   '(cycle-indent basic)
-   (fill-buffer "* A"
-                'point "  Bob"
-                "  C"
-                "* D")
-   (let* ((expect1 '(("* Bob"  "  C"  "* D")
-                     ("** Bob" "   C" "* D")
-                     ("* Bob"  "  C"  "* D")
-                     ("Bob"    "C"    "* D")
-                     ("  Bob"  "  C"  "* D")))
-          (expect (append expect1 expect1)))
+
+  (dolist (test `(("Level 0 sibling to child"
+                   ("A" point "B"        "C"   "" "D")
+                   ("A" ("* " point "B") "  C" "" "D"))
+                  ("Paragraph to sibling"
+                   ("* A" point "  B"      "  C" "" "  D")
+                   ("* A" ("* " point "B") "  C" "" "  D"))
+                  ("Sibling to child"
+                   ("** A" ("* " point "B")  "  C"  "" "  D"  "* E")
+                   ("** A" ("** " point "B") "   C" "" "   D" "* E"))
+                  ("Child to sibling"
+                   ("* A" ("** " point "B") "   C" "" "   D" "** E")
+                   ("* A" ("* " point "B")  "  C"  "" "  D"  "** E"))
+                  ("Indent at beginning of buffer from level 0"
+                   (point "A"        "B"   "" "C")
+                   (("* " point "A") "  B" "" "C"))
+                  ("Blank line to paragraph"
+                   ("A" "* B" "  C" point ""     "* D")
+                   ("A" "* B" "  C" ("  " point) "* D"))
+                  ("Level 0 to paragraph"
+                   ("A" "* B" point "C" "D" "" "E")
+                   ("A" "* B" ("  " point "C") "  D" "" "E"))
+                  ("Point stays in stars during indent"
+                   ("A" "* B" point "* C")
+                   ("A" "* B" ("*" point "* C")))
+                  ("Point stays in start during outdent"
+                   ("A" "* B" "** C" ("**" point "* D"))
+                   ("A" "* B" "** C" ("*" point "* D")))
+                  ("Basic cycle"
+                   ("* A" point "  B" "  C" "* D")
+                   . ,(let ((expect1 '((("* " point "B")  "  C")
+                                       (("** " point "B") "   C")
+                                       (("* " point "B")  "  C")
+                                       ((point "B")       "C")
+                                       (("  " point "B")  "  C"))))
+                        (mapcar (lambda (e) (append '("* A") e '("* D")))
+                                (append expect1 expect1))))
+                  ("Cycle in then out"
+                   ("*** A" ("* " point "B") "* C")
+                   . ,(let ((expect1 '((("** " point "B"))
+                                       (("*** " point "B"))
+                                       (("**** " point "B"))
+                                       (("*** " point "B"))
+                                       (("** " point "B"))
+                                       (("* " point "B"))
+                                       (point "B")
+                                       (("    " point "B"))
+                                       (("*** " point "B")))))
+                        (mapcar (lambda (e) (append '("*** A") e '("* C")))
+                                (append expect1 (cddr expect1)))))
+                  ("Cycle level 0 blank"
+                   ("A" point "")
+                   ("A" ("* " point))
+                   ("A" point "")
+                   ("A" ("* " point)))
+                  ("Cycle level 0 nonblank"
+                   ("A" point "B")
+                   ("A" ("* " point "B"))
+                   ("A" point "B")
+                   ("A" ("* " point "B")))))
+    (outed-test
+     (list 'cycle-indent (first test))
+
+     (apply 'fill-buffer (second test))
      (setq last-command nil)
-     (dolist (e expect)
+     (dolist (e (cddr test))
        (outed-cycle-indent)
        (setq last-command 'outed-cycle-indent)
-       (apply 'check-buffer (cons "* A" e))
-       ;; Check point
-       (compare "Bob" (line-following-point)))))
+       (apply 'check-buffer e))))
 
-  (outed-test
-   '(cycle-indent in-then-out)
-   (fill-buffer "*** A"
-                'point "* B"
-                "* C")
-   (let* ((expect1 '(("** B"   "* C")
-                     ("*** B"  "* C")
-                     ("**** B" "* C")
-                     ("*** B"  "* C")
-                     ("** B"   "* C")
-                     ("* B"    "* C")
-                     ("B"      "* C")
-                     ("    B"  "* C")
-                     ("*** B"  "* C")))
-          (expect (append expect1 (cddr expect1))))
-     (setq last-command nil)
-     (dolist (e expect)
-       (outed-cycle-indent)
-       (setq last-command 'outed-cycle-indent)
-       (apply 'check-buffer (cons "*** A" e)))))
-
-  (outed-test
-   '(cycle-indent level-0-blank)
-   (fill-buffer "A" 'point "")
-
-   (setq last-command nil)
-   (dolist (e '("* " "" "* "))
-     (outed-cycle-indent)
-     (setq last-command 'outed-cycle-indent)
-     (check-buffer "A" e)
-     (compare "" (line-following-point))))
-
-  (outed-test
-   '(cycle-indent level-0-nonblank)
-   (fill-buffer "A" 'point "B")
-
-   (setq last-command nil)
-   (dolist (e '("* B" "B" "* B"))
-     (outed-cycle-indent)
-     (setq last-command 'outed-cycle-indent)
-     (check-buffer "A" e)
-     (compare "B" (line-following-point))))
+  ;; Invariants:
+  ;; * Nothing before the beginning of the current soft line or after
+  ;;   the end of node changes
+  ;; * The line contents following point do not change in certain
+  ;;   circumstances
   )
 
 (defun outed-test-fill-paragraph ()
