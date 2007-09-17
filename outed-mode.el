@@ -155,6 +155,7 @@ current node."
       (backward-char))))
 
 (defun outed-forward-soft-line (&optional amt)
+  "Like `forward-line', but moves over soft-broken lines."
   (or amt (setq amt 1))
   (cond ((not use-hard-newlines)
          ;; If there are no soft lines, just use `forward-line'
@@ -217,6 +218,7 @@ continuation line."
                         (eql ch ?\ )))))))))
 
 (defun outed-level ()
+  "Compute the level of the node containing point."
   (save-excursion
     (outed-beginning-of-node)
     (if (eql (char-after (point)) ?\*)
@@ -227,11 +229,15 @@ continuation line."
       0)))
 
 (defun outed-make-heading (level)
+  "Return the string representation of the header for a node at
+the specified level."
   (if (= level 0)
       ""
     (concat (make-string level ?\*) " ")))
 
 (defun outed-make-continuation (level)
+  "Return the string representation of a continuation line for a
+node at the specified level."
   (if (= level 0)
       ""
     (concat (make-string (+ level 1) ?\ ))))
@@ -425,6 +431,8 @@ like `delete-backward-char'."
     (delete-backward-char 1)))
 
 (defun outed-fill-paragraph (&optional justify)
+  "Node-aware fill function.  This fills the paragraph at point
+and re-indents it appropriately."
   (interactive)
   (save-excursion
     (save-restriction
@@ -487,6 +495,9 @@ like `delete-backward-char'."
     outed-level-4 outed-level-5 outed-level-6))
 
 (defun outed-jit-fontify (start end)
+  "Highlight the nodes between start and end according to their
+indentation.  Note that this first expands start and end to
+enclose the nodes that enclose the initial start and end."
   (goto-char start)
   (outed-beginning-of-node)
   (let ((real-start (point))
@@ -521,9 +532,19 @@ like `delete-backward-char'."
     (outed-create-overlays real-start (point) (nreverse overlays))))
 
 (defun outed-unfontify (start end)
+  "Clear the highlighting between start and end.  Unlikes
+`outed-jit-fontify', this does not expand the region."
   (remove-overlays start end 'outed t))
 
 (defun outed-create-overlays (start end overlays)
+  "Re-highlight between start and end according to the given
+overlay specification.  This can be thought of as clearing the
+Outed highlighting overlays between start and end and creating
+new ones according to the specification, which must be a list
+of (start end face) tuples.  In reality, to reduce the impact on
+the display code, this synchronizes the overlays between start
+and end with the specification.  Thus, if an existing overlay
+matches one in the specification, it will be reused."
   (overlay-recenter end)
   (let ((news-box (cons nil overlays)))
 
