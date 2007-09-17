@@ -28,9 +28,9 @@
 
 ;; TODO
 
-;; * Indentation cycling for multiparagraph nodes is broken
-;; * Fix binding of RET
-;; * Bind tab properly
+;; * Indentation cycling for multiparagraph nodes breaks when they
+;;   reach level 0
+;; * Bind tab properly (indent-line-function?)
 ;; * outed-increase-subtree-level
 ;; * Make S-TAB the inverse of TAB
 
@@ -578,12 +578,13 @@ like `delete-backward-char'."
 
 (defvar outed-mode-map
   (let ((mm (make-sparse-keymap)))
-    (define-key mm "\M-\r"     (function outed-new-sibling))
-    (define-key mm "\r"        (function outed-new-paragraph))
-    (define-key mm [\M-right]  (function outed-increase-level))
-    (define-key mm [\M-left]   (function outed-decrease-level))
-    (define-key mm [tab]       (function outed-cycle-indent))
-    (define-key mm [backspace] (function outed-hungry-backspace))
+    (define-key mm (kbd "M-RET")     (function outed-new-sibling))
+    (define-key mm (kbd "C-M-j")     (function outed-new-sibling))
+    (define-key mm (kbd "RET")       (function outed-new-paragraph))
+    (define-key mm (kbd "M-<right>") (function outed-increase-level))
+    (define-key mm (kbd "M-<left>")  (function outed-decrease-level))
+    (define-key mm (kbd "TAB")       (function outed-cycle-indent))
+    (define-key mm (kbd "DEL")       (function outed-hungry-backspace))
     mm))
 
 (define-minor-mode outed-minor-mode
