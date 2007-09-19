@@ -33,6 +33,16 @@
 ;; * Bind tab properly (indent-line-function?)
 ;; * outed-increase-subtree-level
 ;; * Make S-TAB the inverse of TAB
+;; * Support lower color displays
+;; * Consider writing a node paragraph, hitting return (which puts you
+;;   on an indented continuation line), then outdenting.  Intuitively,
+;;   you would expect this to operate on the current line only, but
+;;   since the current line is a continuation, it picks up the
+;;   previous paragraph as well.  Perhaps blank lines should include
+;;   space-only lines and the blank lines trailing a node should not
+;;   be considered continuation lines?  Does this break anything else?
+;;   outed-beginning-of-node changes, which probably affects the
+;;   indentation routines.
 
 (defgroup outed nil
   "Simple outline highlighting and editing."
@@ -670,6 +680,12 @@ appropriately indent the paragraph to the level of the node.
   ;; Fill correctly
   (make-local-variable 'fill-paragraph-function)
   (setq fill-paragraph-function (function outed-fill-paragraph))
+
+  ;; Auto fill correctly
+  (make-local-variable 'adaptive-fill-regexp)
+  (setq adaptive-fill-regexp "\\*+ ")
+  (make-local-variable 'adaptive-fill-mode)
+  (setq adaptive-fill-mode t)
 
   ;; Disable filladapt.  It breaks everything.
   (setq fill-prefix ""))
