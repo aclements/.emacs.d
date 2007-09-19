@@ -416,7 +416,10 @@ change.  If no top-level block contains point, returns nil."
           ;; parse-from-point is inside a top-level block.  Figure out
           ;; where the introductory statement begins.
           (goto-char outermost)
-          (c-beginning-of-statement)
+          ;; XXX The '1' is a workaround for a bug in Emacs 22
+          ;; cc-mode.  Technically the argument is optional, but the
+          ;; function fails if this argument is nil.
+          (c-beginning-of-statement 1)
           (let ((start-point (point))
                 (end-point
                  ;; The end point would be the brace (inclusive), but
