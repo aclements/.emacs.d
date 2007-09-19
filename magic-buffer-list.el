@@ -1481,6 +1481,7 @@ In the future, this may employ optimizations such as caching."
 
 (defun magic-buffer-list-int-expunge ()
   (interactive)
+  ;; Move point so we're not pointing at a buffer we're going to kill
   (while (and (let ((buffer (magic-buffer-list-get-prop 'buffer)))
                 (if buffer
                     (magic-buffer-list-get-buffer-flag buffer 'kill)
@@ -1488,14 +1489,18 @@ In the future, this may employ optimizations such as caching."
               (magic-buffer-list-int-next-buffer))
     nil)
   (let ((buffer (magic-buffer-list-get-prop 'buffer)))
+    ;; Save buffers
     (dolist (save (magic-buffer-list-get-buffers-with-flag 'save))
       (magic-buffer-list-point-to-buffer save)
       (with-current-buffer save
         (save-buffer))
-      (magic-buffer-list-reset-buffer-flag buffer 'save))
+      (magic-buffer-list-reset-buffer-flag save 'save))
+    ;; Kill buffers
     (dolist (kill (magic-buffer-list-get-buffers-with-flag 'kill))
       (magic-buffer-list-point-to-buffer kill)
       (kill-buffer kill))
+    ;; Redisplay and try to point at the buffer we originally were
+    ;; pointing at
     (magic-buffer-list-show-view magic-buffer-list-current-view
                                  (if (buffer-live-p buffer)
                                      buffer))))
