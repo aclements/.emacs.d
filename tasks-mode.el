@@ -76,27 +76,61 @@
           ",[ \t]*"
           "\\([0-9][0-9][0-9][0-9]\\)$"))
 
+(defconst tasks-date-regexes
+  `((,tasks-date-regex 2 t 3 4)
+    ("^\\([0-9][0-9][0-9][0-9]\\)-\\([0-9][0-9]?\\)-\\([0-9][0-9]?\\)$"
+     2 nil 3 1)))
+
 (defconst tasks-font-lock-keywords
   `((,tasks-date-regex . font-lock-keyword-face)
     ("^ +\\- .*" . tasks-incomplete-face)
     ("^ +\\+ .*" . tasks-completed-face)
     ("^ +\\~ .*" . tasks-irrelevant-face)))
 
+(defvar tasks-date-beginning-x nil)
+(defvar tasks-date-end-x nil)
+
 (defun tasks-parse-date (&optional str)
   (save-match-data
-    (cond ((if (null str)
-               (looking-at tasks-date-regex)
-             (string-match tasks-date-regex str))
-           (let ((month
-                  (+ 1 (position (match-string-no-properties 2 str)
-                                 tasks-months :test #'string=)))
-                 (day (string-to-number (match-string 3 str)))
-                 (year (string-to-number (match-string 4 str))))
-             (list month day year)))
-          (t
-           (if (null str)
-               (error "Invalid date at point")
-             (error "Invalid date: %s" str))))))
+    (let ((regexes tasks-date-regexes)
+          (result nil))
+      (while (and (consp regexes) (not result))
+        (let* ((this (car regexes))
+               (regex     (first this))
+               (monthpos  (second this))
+               (monthname (third this))
+               (daypos    (fourth this))
+               (yearpos   (fifth this)))
+          (when (if (null str)
+                    (looking-at regex)
+                  (string-match regex str))
+            ;; Got a match, parse it
+            (setq tasks-date-beginning-x (match-beginning 0))
+            (setq tasks-date-end-x (match-end 0))
+            (let ((month
+                   (if monthname
+                       (+ 1 (position (match-string-no-properties monthpos str)
+                                      tasks-months :test #'string=))
+                     (string-to-number (match-string monthpos str))))
+                  (day (string-to-number (match-string daypos str)))
+                  (year (string-to-number (match-string yearpos str))))
+              (setq result (list month day year)))))
+        (setq regexes (cdr regexes)))
+      (unless result
+        (if (null str)
+            (error "Invalid date at point")
+          (error "Invalid date: %s" str)))
+      result)))
+
+(defun tasks-date-beginning ()
+  (if (null tasks-date-beginning-x)
+      (error "No date has been parsed")
+    tasks-date-beginning-x))
+
+(defun tasks-date-end ()
+  (if (null tasks-date-end-x)
+      (error "No date has been parsed")
+    tasks-date-end-x))
 
 (defun tasks-unparse-date (date)
   (let* ((day (cadr date))  (month (car date))  (year (caddr date))
@@ -257,12 +291,30 @@
             (delete-char 1)
             (insert new)))))))
 
+(defun tasks-complete-date ()
+  (interactive)
+  (save-excursion
+    (forward-line 0)
+    (let ((date (tasks-parse-date)))
+      (delete-region (tasks-date-beginning) (tasks-date-end))
+      (insert (tasks-unparse-date date)))))
+
+(defun tasks-dwim ()
+  (interactive)
+  (or (ignore-errors
+        (tasks-complete-date)
+        t)
+      (ignore-errors
+        (tasks-toggle-checkmark)
+        t)
+      (error "No date or checkmark at point")))
+
 (defvar tasks-mode-map
   (let ((mm (make-sparse-keymap)))
     (define-key mm (kbd "C-c i")   #'tasks-jump-or-insert)
     (define-key mm (kbd "C-c g")   #'tasks-jump-to-date)
-    (define-key mm (kbd "C-c c")   #'tasks-toggle-checkmark)
-    (define-key mm (kbd "C-c C-c") #'tasks-toggle-checkmark)
+    (define-key mm (kbd "C-c c")   #'tasks-dwim)
+    (define-key mm (kbd "C-c C-c") #'tasks-dwim)
     (define-key mm (kbd "C-c .")   #'tasks-jump-to-today)
     (define-key mm (kbd "C-c C-.") #'tasks-jump-to-today)
     mm))
