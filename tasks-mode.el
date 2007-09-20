@@ -60,11 +60,13 @@
 (require 'calendar)
 
 (defconst tasks-weekdays
-  '("Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"))
+  '("Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday")
+  "The weekdays recognized in dates, in order from Sunday.")
 
 (defconst tasks-months
   '("January" "February" "March" "April" "May" "June"
-    "July" "August" "September" "October" "November" "December"))
+    "July" "August" "September" "October" "November" "December")
+  "The months recognized in dates, in order from January.")
 
 (defconst tasks-date-canonical-regex
   (concat "^"
@@ -74,7 +76,11 @@
           "[ \t]+"
           "\\([0-9][0-9]?\\)"
           ",[ \t]*"
-          "\\([0-9][0-9][0-9][0-9]\\)$"))
+          "\\([0-9][0-9][0-9][0-9]\\)$")
+  "A regular expression matching only the 'canonical' form of
+dates.  A canonical date looks like:
+
+  Thursday, September 20, 2007"
 
 (defconst tasks-date-regexes
   `((,tasks-date-canonical-regex 2 t 3 4)
@@ -86,13 +92,25 @@
               "\\([0-9][0-9][0-9][0-9]\\)$")
      1 t 2 3)
     ("^\\([0-9][0-9][0-9][0-9]\\)-\\([0-9][0-9]?\\)-\\([0-9][0-9]?\\)$"
-     2 nil 3 1)))
+     2 nil 3 1))
+  "A collection of regexps used to parse different formats of
+dates.  This is a list of tuples of the form:
+
+\(REGEX MONTH-SUBEXP MONTH-NAMED DAY-SUBEXP YEAR-SUBEXP)
+
+Where MONTH-SUBEXP, DAY-SUBEXP, and YEAR-SUBEXP indicate the
+indexes of the subexpressions to use for the month, day, and
+year.  If MONTH-NAMED is non-nil, then MONTH-SUBEXP refers to a
+subexpression that matches a month name as found in
+`tasks-months'.  Otherwise, it must match a number.")
 
 (defconst tasks-date-regex
   (let ((c (caar tasks-date-regexes)))
     (dolist (r (cdr tasks-date-regexes))
       (setq c (concat c "\\)\\|\\(?:" (car r))))
-    (concat "\\(?:" c "\\)")))
+    (concat "\\(?:" c "\\)"))
+  "A regular expression matching any of the forms of dates
+recognized by tasks-parse-date.")
 
 (defconst tasks-font-lock-keywords
   `((,tasks-date-regex . font-lock-keyword-face)
@@ -100,8 +118,8 @@
     ("^ +\\+ .*" . tasks-completed-face)
     ("^ +\\~ .*" . tasks-irrelevant-face)))
 
-(defvar tasks-date-beginning-x nil)
-(defvar tasks-date-end-x nil)
+;; XXX Make a single state var
+(defvar tasks-date-match-state nil)
 
 (defun tasks-parse-date (&optional str)
   (save-match-data
@@ -118,8 +136,8 @@
                     (looking-at regex)
                   (string-match regex str))
             ;; Got a match, parse it
-            (setq tasks-date-beginning-x (match-beginning 0))
-            (setq tasks-date-end-x (match-end 0))
+            (setq tasks-date-match-state
+                  (list (match-beginning 0) (match-end 0)))
             (let ((month
                    (if monthname
                        (+ 1 (position (match-string-no-properties monthpos str)
@@ -136,14 +154,14 @@
       result)))
 
 (defun tasks-date-beginning ()
-  (if (null tasks-date-beginning-x)
+  (if (null tasks-date-match-state)
       (error "No date has been parsed")
-    tasks-date-beginning-x))
+    (first tasks-date-match-state)))
 
 (defun tasks-date-end ()
-  (if (null tasks-date-end-x)
+  (if (null tasks-date-match-state)
       (error "No date has been parsed")
-    tasks-date-end-x))
+    (second tasks-date-match-state)))
 
 (defun tasks-unparse-date (date)
   (let* ((day (cadr date))  (month (car date))  (year (caddr date))
@@ -222,6 +240,9 @@
             (goto-char start)
             nil)
         ;; Found a date
+        (push-mark start t)
+        (message "Mark saved at previous point")
+        ;; Compare this date against the target
         (let* ((last (save-excursion
                        (goto-char (match-beginning 0))
                        (tasks-parse-date)))
