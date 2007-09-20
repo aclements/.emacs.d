@@ -214,6 +214,14 @@
               ;; Return
               (equal last date))))))))
 
+(defun tasks-jump-to-today ()
+  (interactive)
+  (let* ((time (decode-time))
+         (day (nth 3 time))
+         (month (nth 4 time))
+         (year (nth 5 time)))
+    (tasks-jump-to-date (list month day year))))
+
 (defun tasks-jump-or-insert (date)
   (interactive (list (tasks-read-date)))
   (if (tasks-jump-to-date date)
@@ -254,6 +262,8 @@
     (define-key mm (kbd "C-c g")   #'tasks-jump-to-date)
     (define-key mm (kbd "C-c c")   #'tasks-toggle-checkmark)
     (define-key mm (kbd "C-c C-c") #'tasks-toggle-checkmark)
+    (define-key mm (kbd "C-c .")   #'tasks-jump-to-today)
+    (define-key mm (kbd "C-c C-.") #'tasks-jump-to-today)
     mm))
 
 (define-derived-mode tasks-mode text-mode "Tasks"
