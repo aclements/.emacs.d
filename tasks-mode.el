@@ -67,9 +67,9 @@
     "July" "August" "September" "October" "November" "December"))
 
 (defconst tasks-date-regex
-  (concat "^"
+  (concat "^\\(?:"
           (regexp-opt tasks-weekdays t)
-          ",[ \t]*"
+          ",[ \t]*\\)?"
           (regexp-opt tasks-months t)
           "[ \t]+"
           "\\([0-9][0-9]?\\)"
@@ -110,18 +110,18 @@
             ", "
             (number-to-string year))))
 
+(defun tasks-compare-lists (a b)
+  (cond ((null a)            (if (null b) '= '<))
+        ((null b)            '>)
+        ((< (car a) (car b)) '<)
+        ((> (car a) (car b)) '>)
+        (t (tasks-compare-lists (cdr a) (cdr b)))))
+
 (defun tasks-compare-dates (a b)
   (unless (and (= (length a) 3) (= (length b) 3))
     (error "Cannot compare dates %s and %s" a b))
-  (let ((cmp '=))
-    (while (and a (eq cmp '=))
-      (cond ((< (car a) (car b))
-             (setq cmp '<))
-            ((> (car a) (car b))
-             (setq cmp '>)))
-      (setq a (cdr a)
-            b (cdr b)))
-    cmp))
+  (tasks-compare-lists (list (caddr a) (car a) (cadr a))
+                       (list (caddr b) (car b) (cadr b))))
 
 (defun tasks-read-date ()
   (save-window-excursion
@@ -175,15 +175,16 @@
             (goto-char start)
             nil)
         ;; Found a date
-        (goto-char (match-beginning 0))
-        (let ((last (tasks-parse-date)))
-          (if (equal last date)
+        (let* ((last (save-excursion
+                       (goto-char (match-beginning 0))
+                       (tasks-parse-date)))
+               (cmp (tasks-compare-dates last date)))
+          (if (eq cmp '=)
               ;; We got lucky
-              t
-            (let* ((dir (if (eq (tasks-compare-dates last date) '<)
-                            'forward
-                          'backward))
-                   (cmp (if (eq dir 'forward) '< '>))
+              (progn
+                (goto-char (match-beginning 0))
+                t)
+            (let* ((dir (if (eq cmp '<) 'forward 'backward))
                    (re-search (if (eq dir 'forward)
                                   #'re-search-forward
                                 #'re-search-backward)))
