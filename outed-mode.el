@@ -44,6 +44,8 @@
 ;;   outed-beginning-of-node changes, which probably affects the
 ;;   indentation routines.
 
+;;; Customization:
+
 (defgroup outed nil
   "Simple outline highlighting and editing."
   :group 'outlines)
@@ -116,6 +118,8 @@ buffer face.  Otherwise, such text will be displayed using the
   :type '(choice
           (const :tag "Highlight top-level text" nil)
           (const :tag "Highlight only indented text" t)))
+
+;;; Code:
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Navigation
@@ -683,7 +687,7 @@ appropriately indent the paragraph to the level of the node.
 
   ;; Auto fill correctly
   (make-local-variable 'adaptive-fill-regexp)
-  (setq adaptive-fill-regexp "\\*+ ")
+  (setq adaptive-fill-regexp " +\\|\\*+ ")
   (make-local-variable 'adaptive-fill-mode)
   (setq adaptive-fill-mode t)
 
