@@ -66,10 +66,10 @@
   '("January" "February" "March" "April" "May" "June"
     "July" "August" "September" "October" "November" "December"))
 
-(defconst tasks-date-regex
-  (concat "^\\(?:"
+(defconst tasks-date-canonical-regex
+  (concat "^"
           (regexp-opt tasks-weekdays t)
-          ",[ \t]*\\)?"
+          ",[ \t]*"
           (regexp-opt tasks-months t)
           "[ \t]+"
           "\\([0-9][0-9]?\\)"
@@ -77,9 +77,22 @@
           "\\([0-9][0-9][0-9][0-9]\\)$"))
 
 (defconst tasks-date-regexes
-  `((,tasks-date-regex 2 t 3 4)
+  `((,tasks-date-canonical-regex 2 t 3 4)
+    (,(concat "^"
+              (regexp-opt tasks-months t)
+              "[ \t]+"
+              "\\([0-9][0-9]?\\)"
+              ",[ \t]*"
+              "\\([0-9][0-9][0-9][0-9]\\)$")
+     1 t 2 3)
     ("^\\([0-9][0-9][0-9][0-9]\\)-\\([0-9][0-9]?\\)-\\([0-9][0-9]?\\)$"
      2 nil 3 1)))
+
+(defconst tasks-date-regex
+  (let ((c (caar tasks-date-regexes)))
+    (dolist (r (cdr tasks-date-regexes))
+      (setq c (concat c "\\)\\|\\(?:" (car r))))
+    (concat "\\(?:" c "\\)")))
 
 (defconst tasks-font-lock-keywords
   `((,tasks-date-regex . font-lock-keyword-face)
