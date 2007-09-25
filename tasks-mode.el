@@ -80,7 +80,7 @@
   "A regular expression matching only the 'canonical' form of
 dates.  A canonical date looks like:
 
-  Thursday, September 20, 2007"
+  Thursday, September 20, 2007")
 
 (defconst tasks-date-regexes
   `((,tasks-date-canonical-regex 2 t 3 4)
@@ -314,8 +314,8 @@ recognized by tasks-parse-date.")
                          (match-end 0)
                        (point-min))))
             (regex "^ +\\([-+~]\\) "))
-        (if (and (not (looking-at regex))
-                 (not (re-search-backward regex bound t)))
+        (goto-char (+ (point) 3))
+        (if (not (re-search-backward regex bound t))
             (error "Not in a task")
           (goto-char (match-beginning 1))
           (let ((new (case (char-after (point))
