@@ -549,7 +549,13 @@ everything else."
             ;; Have-not
             (push buffer nondirectoried)
           ;; Have.  Split up the directory into components
-          (let* ((dirlist-almost (split-string directory "/"))
+          (let* ((dirlist-almost
+                  ;; Emacs 21 doesn't include empty strings, but Emacs
+                  ;; 22 does.  The Emacs 22 behavior would make this
+                  ;; easier to write, but we simulate and deal with
+                  ;; the Emacs 21 behavior for compatibility.
+                  (remove-if (lambda (d) (string= d ""))
+                             (split-string directory "/")))
                  ;; But tack the initial / back on if there is one
                  (dirlist
                   (cons (if (equal (substring directory 0 1) "/")
