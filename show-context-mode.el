@@ -5,7 +5,7 @@
 ;; Authors:    Austin Clements (amdragon@mit.edu)
 ;; Maintainer: Austin Clements (amdragon@mit.edu)
 ;; Created:    18-Jul-2005
-;; Version:    0.2
+;; Version:    0.3
 
 ;; This program is free software; you can redistribute it and/or modify it under
 ;; the terms of the GNU General Public License as published by the Free Software
@@ -258,6 +258,10 @@ present by displaying the line that would be there anyways."
             (setq getter (get mode 'show-context-mode-getter))
             (setq mode (get mode 'derived-mode-parent)))
           (setq show-context-mode-getter getter))
+        ;; Initialize the getter
+        (when show-context-mode-getter
+          (funcall (get show-context-mode-getter
+                        'show-context-mode-getter-init)))
         ;; Get the left margin space
         (setq show-context-mode-left-margin
               (show-context-mode-get-left-edge-space))
@@ -345,8 +349,256 @@ attempt to use the buffer's comment syntax to also strip comments."
                 (just-one-space)))))
         ;; Nuke trailing whitespace
         (delete-trailing-whitespace)
+        ;; Nuke beginning whitespace
+        (goto-char (point-min))
+        (delete-horizontal-space)
         ;; Gather up result
         (buffer-substring (point-min) (point-max))))))
+
+;;; Parser:
+
+(defvar show-context-mode-parser nil
+  "The state of the show-context-mode parser for a given buffer.
+This is a tuple of the form:
+
+  (VALID CACHE OPEN-CHAR CLOSE-CHAR)
+
+OPEN-CHAR and CLOSE-CHAR are the characters used to increase and
+decrease the nesting level, respectively.
+
+CACHE is a cached list of the locations of nesting markers and
+the state of the Emacs parser at these locations.  Each entry is
+of the form:
+
+  (POS INCREASE-P DEPTH PARSER-STATE)
+
+POS indicates the buffer position of the nesting marker.
+INCREASE-P is t if this marker increases the nesting, nil
+otherwise.  DEPTH is the depth of this marker, starting at 0 (the
+open and close markers have the same depth).  DEPTH may be
+negative if nesting is unbalanced.  PARSER-STATE is the state of
+the Emacs syntax table parser at this position.
+
+The cache must be sorted in decreasing order of position.
+
+VALID indicates the largest buffer position to which the cache
+can be considered valid.  Any entries with a position greater
+than or equal to this should be considered stale.")
+(make-variable-buffer-local 'show-context-mode-parser)
+
+(defun show-context-mode-init-parser (open-char close-char)
+  "Initialize the show-context-mode parser for this buffer, using
+open-char and close-char as the characters that increase and
+decrease the nesting level, respectively.
+
+The show-context-mode parser is capable of efficiently
+determining the nesting level of any point in the buffer, as well
+as traversing backwards by nesting.  It also provides functions
+to efficiently search the buffer while ignoring text in
+comments."
+
+  (setq show-context-mode-parser
+        (list 0 '() open-char close-char))
+  (add-to-list 'after-change-functions #'show-context-mode-parser-update))
+
+(defun show-context-mode-parser-update (beg end len)
+  "The after-change-function used to keep the show-context-mode
+parser's cache up to date."
+
+  (when (and show-context-mode-parser
+             (< beg (car show-context-mode-parser)))
+    (setcar show-context-mode-parser beg)))
+
+(defun show-context-mode-parser-parse (to)
+  "Parse up to the given point.  Returns a list of tuples in the
+format described for the cache in `show-context-mode-parser',
+which are guaranteed to be only leading up to the given point."
+
+  (unless show-context-mode-parser
+    (error "show-context-mode: No active parser"))
+  (let ((valid      (first show-context-mode-parser))
+        (cache      (second show-context-mode-parser))
+        (open-char  (third show-context-mode-parser))
+        (close-char (fourth show-context-mode-parser)))
+    ;; Drop invalid entries from the cache
+    (while (and cache (>= (first (car cache)) valid))
+      (setq cache (cdr cache)))
+    ;; Parse from the last valid cache entry
+    (save-excursion
+      (save-restriction
+        (widen)
+        (let ((pos    (if cache (first (car cache)) (point-min)))
+              (depth  (if cache
+                          (- (third (car cache))
+                             ;; If the last entry was a close,
+                             ;; subtract one from the current depth
+                             (if (second (car cache)) 0 1))
+                        -1))
+              (pstate (if cache (fourth (car cache)) nil))
+              (skip   (string ?^ open-char close-char)))
+          ;; Go to the open marker.  We have to go to one past because
+          ;; the loop expects this (otherwise skip-chars-forward stays
+          ;; put)
+          (goto-char (+ pos 1))
+          ;; Parse forward to the destination
+          (while (and (not (eobp))
+                      (< (point) to))
+            ;; Find the nest nesting marker
+            (skip-chars-forward skip)
+            (let ((increase-p (eql (char-after (point)) open-char))
+                  (decrease-p (eql (char-after (point)) close-char)))
+              (when (or increase-p decrease-p)
+                ;; Bring the syntax table parser up to date
+                (setq pstate (parse-partial-sexp pos (point)
+                                                 nil nil pstate)
+                      pos (point))
+                ;; Am I not inside a comment or string?
+                (when (not (or (fourth pstate)
+                               (fifth pstate)))
+                  ;; Found a nesting marking
+                  (when increase-p
+                    (setq depth (+ depth 1)))
+                  (setq cache (cons (list (point) increase-p depth pstate) cache))
+                  (when decrease-p
+                    (setq depth (- depth 1))))))
+            ;; Move to the next character and continue
+            (unless (eobp)
+              (forward-char))))
+        ;; Update the stored parser state
+        (setcar show-context-mode-parser (point))
+        (setcar (cdr show-context-mode-parser) cache)))
+    ;; Find and return the tail of the cache that applies to `to'
+    (while (and cache (> (first (car cache)) to))
+      (setq cache (cdr cache)))
+    cache))
+
+(defun show-context-mode-parser-current-level ()
+  "Get the nesting level at point.  Returns -1 if point is not
+within any nesting markers, 0 if point is within one pair, etc."
+
+  (let ((cache (show-context-mode-parser-parse (point))))
+    (cond ((null cache)
+           ;; We're not inside any markers
+           -1)
+          ((second (car cache))
+           ;; We're at the indentation level of the preceding open
+           ;; marker
+           (third (car cache)))
+          (t
+           ;; We're one level above the preceding close marker
+           (- (third (car cache)) 1)))))
+
+(defun show-context-mode-parser-up (level)
+  "Move point to the enclosing open marker for `level'.  If there
+is no marker pair enclosing point at that level, does nothing and
+returns nil."
+
+  (let ((cache (show-context-mode-parser-parse (point))))
+    ;; Are we at least at the goal level currently?
+    (if (>= (show-context-mode-parser-current-level) level)
+        (progn
+          ;; Traverse the cache until we find the open of the
+          ;; requested level.  Thanks to proper nesting, we don't have
+          ;; to be more careful.  We also know that we won't find a
+          ;; close of this level before the open.
+          (while (and cache (> (third (car cache)) level))
+            (setq cache (cdr cache)))
+          ;; Go!
+          (unless cache
+            (error "show-context-mode-parser-up: BUG Couldn't find open"))
+          (goto-char (first (car cache)))
+          t)
+      nil)))
+
+(defun show-context-mode-skip-chars-forward (skip)
+  "Work-a-like for `skip-chars-forward', but comments will be
+skipped over."
+
+  (let* ((cache (show-context-mode-parser-parse (point)))
+         (start (point))
+         (pos (if cache (first (car cache)) (point-min)))
+         (pstate (if cache (fourth (car cache)) nil)))
+    (catch 'done
+      (skip-chars-forward skip)
+      (while (not (eobp))
+        ;; Update the parser
+        (setq pstate (parse-partial-sexp pos (point) nil nil pstate)
+              pos (point))
+        ;; Are we in a comment?
+        (if (fifth pstate)
+            (progn
+              ;; Skip over the comment
+              (goto-char (ninth pstate))
+              (forward-comment 1)
+              (when (< (point) pos)
+                (error "BUG: Failed to skip over comment"))
+              ;; Update the parser
+              (setq pstate (parse-partial-sexp pos (point) nil nil pstate)
+                    pos (point)))
+          ;; Found it
+          (throw 'done nil))
+        ;; Try again
+        (skip-chars-forward skip)))
+    ;; Return
+    (- (point) start)))
+
+(defun show-context-mode-skip-chars-backward (skip)
+  "Work-a-like for `skip-chars-backward', but comments will be
+skipped over."
+
+  ;; Work forward from each parse state captured in the cache
+  (let ((cache (show-context-mode-parser-parse (point)))
+        (start (point))
+        (limit (point))
+        (point-min (point-min))
+        ;; Record the furthest satisfactory point
+        (furthest nil))
+    (save-restriction
+      (while (null furthest)
+        (let ((pos (if cache (first (car cache)) point-min))
+              (pstate (if cache (fourth (car cache)) nil)))
+          ;; Eat this element from the cache.  When the cache is
+          ;; empty, we perform one final iteration from the very
+          ;; beginning of the buffer.
+          (if cache
+              (setq cache (cdr cache))
+            (setq furthest 'failed))
+          (when (fifth pstate)
+            (error "BUG: Nesting marker parse state %s is in a comment"
+                   (car cache)))
+          ;; Only consider the region covered by this cache entry
+          (narrow-to-region pos limit)
+          (setq limit pos)
+          ;; Start at the beginning of this entry and work forward
+          (goto-char pos)
+          (skip-chars-forward skip)
+          (while (not (eobp))
+            ;; Update the parser
+            (setq pstate (parse-partial-sexp pos (point) nil nil pstate)
+                  pos (point))
+            ;; Are we in a comment?
+            (if (fifth pstate)
+                (progn
+                  ;; Skip over the comment
+                  (goto-char (ninth pstate))
+                  (forward-comment 1)
+                  (when (< (point) pos)
+                    (error "BUG: Failed to skip over comment"))
+                  ;; Update the parser
+                  (setq pstate
+                        (parse-partial-sexp pos (point) nil nil pstate)
+                        pos (point)))
+              ;; We found a satisfactory point
+              (setq furthest (point))
+              (forward-char))
+            ;; Push the frontier
+            (skip-chars-forward skip)))))
+    ;; Go to what we found
+    (if (eq furthest 'failed)
+        (goto-char (point-min))
+      (goto-char (+ furthest 1)))
+    ;; Return
+    (- (point) start)))
 
 ;;; Getters:
 
@@ -372,71 +624,40 @@ point.  Specifically, this returns the first line of the statement
 that begins the top-level block containing point, though this might
 change.  If no top-level block contains point, returns nil."
 
-  (let ((strip-comments (eq show-context-mode-c-finagle-level
-                            'strip-comments))
-        (parse-from-point
-         (or
-          ;; Point might be in the middle of the statement that
-          ;; introduces the current block, in which case tracing
-          ;; braces backwards from point is going to miss it.  Move
-          ;; point forward a bit if this is the case.
-          (save-excursion
-            (c-end-of-statement)
-            (c-forward-syntactic-ws)
-            (if (looking-at "{")
-                ;; Put point inside the brace
-                (+ (point) 1)))
-          ;; However!  The above will miss the enclosing statement if
-          ;; point is (syntactically) right on the open brace
-          (save-excursion
-            (c-forward-syntactic-ws)
-            (if (looking-at "{")
-                ;; Put point inside the brace
-                (+ (point) 1)))
-          (point)))
-        (max-end-point
-         ;; Since we don't want it displaying stuff that we can
-         ;; actually see, compute the maximum end point for the
-         ;; scrunch.
-         (point)))
-    (save-excursion
-      (goto-char parse-from-point)
-      (let ((state (c-parse-state))
-            outermost prefix)
-        ;; Find the outermost brace by finding the last non-pair entry
-        ;; in state.  This should result in nil iff point is at the
-        ;; top level.
-        (dolist (brace state)
-          (if (and (not (consp brace))
-                   (save-excursion
-                     (goto-char brace)
-                     (looking-at "{")))
-              (setq outermost brace)))
-        (when outermost
-          ;; parse-from-point is inside a top-level block.  Figure out
-          ;; where the introductory statement begins.
-          (goto-char outermost)
-          ;; XXX The '1' is a workaround for a bug in Emacs 22
-          ;; cc-mode.  Technically the argument is optional, but the
-          ;; function fails if this argument is nil.
-          (c-beginning-of-statement 1)
-          (let ((start-point (point))
-                (end-point
-                 ;; The end point would be the brace (inclusive), but
-                 ;; that might actually be visible, so bound it
-                 (min (+ outermost 1) max-end-point)))
-            ;; If I still have anything left, gather it up
-            (when (< start-point end-point)
-              (show-context-mode-scrunch
-               start-point
-               end-point
-               strip-comments))))))))
+  (catch 'done
+    (let ((limit (point))
+          (strip-comments (eq show-context-mode-c-finagle-level
+                              'strip-comments)))
+      ;; Find the outermost brace
+      (unless (show-context-mode-parser-up 0)
+        ;; Figure out if I'm in the beginning of a function
+        (show-context-mode-skip-chars-forward "^{;")
+        (unless (eql (char-after (point)) ?{)
+          ;; Nope, return nil
+          (throw 'done nil)))
+      ;; Include the curly brace
+      (when (eql (char-after (point)) ?{)
+        (forward-char))
+      ;; Scootch the limit back
+      (when (< (point) limit)
+        (setq limit (point)))
+      ;; Find the beginning of this expression
+      (show-context-mode-skip-chars-backward "^};")
+      ;; Gather up
+      (when (< (point) limit)
+        (show-context-mode-scrunch (point) limit strip-comments)))))
 
 (put 'c-mode 'show-context-mode-getter
      #'show-context-mode-c-get-context)
 ;; c++-mode is not a derived mode
 (put 'c++-mode 'show-context-mode-getter
      #'show-context-mode-c-get-context)
+
+(defun show-context-mode-c-init ()
+  (show-context-mode-init-parser ?{ ?}))
+
+(put 'show-context-mode-c-get-context 'show-context-mode-getter-init
+     #'show-context-mode-c-init)
 
 ;; python-mode
 
