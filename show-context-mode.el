@@ -639,13 +639,16 @@ change.  If no top-level block contains point, returns nil."
       (when (eql (char-after (point)) ?{)
         (forward-char))
       ;; Scootch the limit back
-      (when (< (point) limit)
-        (setq limit (point)))
+      (setq limit (min (point) limit))
       ;; Find the beginning of this expression
       (show-context-mode-skip-chars-backward "^};")
       ;; Gather up
       (when (< (point) limit)
-        (show-context-mode-scrunch (point) limit strip-comments)))))
+        (let ((text (show-context-mode-scrunch (point) limit
+                                               strip-comments)))
+          (if (string= text "")
+              nil
+            text))))))
 
 (put 'c-mode 'show-context-mode-getter
      #'show-context-mode-c-get-context)
@@ -657,6 +660,50 @@ change.  If no top-level block contains point, returns nil."
   (show-context-mode-init-parser ?{ ?}))
 
 (put 'show-context-mode-c-get-context 'show-context-mode-getter-init
+     #'show-context-mode-c-init)
+
+;; java-mode
+
+;; This has some odd behavior in certain circumstances.  For example,
+;; only up until the syntactic whitespace preceding the first method
+;; declaration, it will return the class declaration.
+
+(defun show-context-mode-java-get-context ()
+  (catch 'done
+    (let ((limit (point))
+          (strip-comments (eq show-context-mode-c-finagle-level
+                              'strip-comments)))
+      ;; Find the beginning of the method or class
+      (unless (show-context-mode-parser-up 1)
+        ;; Is point in a method declaration?
+        (show-context-mode-skip-chars-forward "^{;")
+        (unless (eql (char-after (point)) ?{)
+          ;; Nope.  Get the class declaration
+          (unless (show-context-mode-parser-up 0)
+            ;; Is point in the class declaration?
+            (show-context-mode-skip-chars-forward "^{;")
+            (unless (eql (char-after (point)) ?{)
+              ;; Nope, return nil
+              (throw 'done nil)))))
+      ;; Scootch the limit back
+      (setq limit (min (point) limit))
+      ;; Include the curly brace
+      (when (eql (char-after limit) ?{)
+        (setq limit (+ 1 limit)))
+      ;; Find the beginning of this expression
+      (show-context-mode-skip-chars-backward "^{};")
+      ;; Gather up
+      (when (< (point) limit)
+        (let ((text (show-context-mode-scrunch (point) limit
+                                               strip-comments)))
+          (if (string= text "")
+              nil
+            text))))))
+
+(put 'java-mode 'show-context-mode-getter
+     #'show-context-mode-java-get-context)
+
+(put 'show-context-mode-java-get-context 'show-context-mode-getter-init
      #'show-context-mode-c-init)
 
 ;; python-mode
