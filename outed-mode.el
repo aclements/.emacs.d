@@ -298,6 +298,15 @@ heading."
         (newline)
         (insert (outed-make-continuation level))))))
 
+(defun outed-new-paragraph-dwim ()
+  "Like outed-new-paragraph, but if the cursor is on an empty
+line, stay at the left column.  This is intended for binding to
+RET."
+  (interactive)
+  (if (and (bolp) (eolp))
+      (newline)
+    (outed-new-paragraph)))
+
 (defun outed-increase-level (&optional by)
   "Increase (or decrease) the indentation level of the current
 node.  If a numeric argument is not provided, then indent by one
@@ -615,7 +624,7 @@ matches one in the specification, it will be reused."
   (let ((mm (make-sparse-keymap)))
     (define-key mm (kbd "M-RET")     (function outed-new-sibling))
     (define-key mm (kbd "C-M-j")     (function outed-new-sibling))
-    (define-key mm (kbd "RET")       (function outed-new-paragraph))
+    (define-key mm (kbd "RET")       (function outed-new-paragraph-dwim))
     (define-key mm (kbd "M-<right>") (function outed-increase-level))
     (define-key mm (kbd "M-<left>")  (function outed-decrease-level))
     (define-key mm (kbd "TAB")       (function outed-cycle-indent))
