@@ -282,12 +282,20 @@ present by displaying the line that would be there anyways."
 
 (defun show-context-mode-scrunch (start end &optional nuke-comments)
   "Scrunch together the code between start and end into a single,
-succinct, newline-less string.  If nuke-comments is true, this will
-attempt to use the buffer's comment syntax to also strip comments."
+succinct, newline-less string using
+`show-context-mode-scrunch-string'."
+
+  (show-context-mode-scrunch-string
+   (buffer-substring start end)
+   nuke-comments))
+
+(defun show-context-mode-scrunch-string (source &optional nuke-comments)
+  "Scrunch together the code in source into a single, succinct,
+newline-less string.  If nuke-comments is true, this will attempt
+to use the buffer's comment syntax to also strip comments."
 
   ;; Copy the region into a temporary buffer for acrobatics
-  (let ((source (buffer-substring start end))
-        (syntax-table (syntax-table)))
+  (let ((syntax-table (syntax-table)))
     (with-temp-buffer
       (with-syntax-table syntax-table
         (insert source)
@@ -355,7 +363,9 @@ attempt to use the buffer's comment syntax to also strip comments."
         ;; Gather up result
         (buffer-substring (point-min) (point-max))))))
 
-;;; Parser:
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Parser
+;;;
 
 (defvar show-context-mode-parser nil
   "The state of the show-context-mode parser for a given buffer.
@@ -510,6 +520,10 @@ returns nil."
           t)
       nil)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Parser-based utilities
+;;;
+
 (defun show-context-mode-skip-chars-forward (skip)
   "Work-a-like for `skip-chars-forward', but comments will be
 skipped over."
@@ -524,14 +538,18 @@ skipped over."
         ;; Update the parser
         (setq pstate (parse-partial-sexp pos (point) nil nil pstate)
               pos (point))
-        ;; Are we in a comment?
-        (if (fifth pstate)
+        ;; Are we in a string or comment?
+        (if (or (fourth pstate) (fifth pstate))
             (progn
               ;; Skip over the comment
               (goto-char (ninth pstate))
-              (forward-comment 1)
+              (if (fourth pstate)
+                  ;; Skip string
+                  (forward-sexp)
+                ;; Skip comment
+                (forward-comment 1))
               (when (< (point) pos)
-                (error "BUG: Failed to skip over comment"))
+                (error "BUG: Failed to skip over string/comment"))
               ;; Update the parser
               (setq pstate (parse-partial-sexp pos (point) nil nil pstate)
                     pos (point)))
@@ -576,14 +594,18 @@ skipped over."
             ;; Update the parser
             (setq pstate (parse-partial-sexp pos (point) nil nil pstate)
                   pos (point))
-            ;; Are we in a comment?
-            (if (fifth pstate)
+            ;; Are we in a string or comment?
+            (if (or (fourth pstate) (fifth pstate))
                 (progn
                   ;; Skip over the comment
                   (goto-char (ninth pstate))
-                  (forward-comment 1)
+                  (if (fourth pstate)
+                      ;; Skip string
+                      (forward-sexp)
+                    ;; Skip comment
+                    (forward-comment 1))
                   (when (< (point) pos)
-                    (error "BUG: Failed to skip over comment"))
+                    (error "BUG: Failed to skip over string/comment"))
                   ;; Update the parser
                   (setq pstate
                         (parse-partial-sexp pos (point) nil nil pstate)
@@ -600,7 +622,66 @@ skipped over."
     ;; Return
     (- (point) start)))
 
-;;; Getters:
+(defun show-context-mode-forward-balanced (open close &optional limit)
+  "Skip over a balanced expression of open and close characters.
+The character under point must be the open character.  If
+successful, place point on the character after the closing
+delimiter and return t.  Otherwise, return nil."
+
+  (unless (eql (char-after (point)) open)
+    (error "Character at point is not open character"))
+  (save-restriction
+    (when limit
+        (narrow-to-region (point) limit))
+    (catch 'done
+      (let ((level 0)
+            (skip-spec (string ?^ open close)))
+        (while (and (>= level 0) (not (eobp)))
+          (forward-char 1)
+          (show-context-mode-skip-chars-forward skip-spec)
+          (let ((chr (char-after (point))))
+            (cond ((eql chr open)
+                   (setq level (+ level 1)))
+                  ((eql chr close)
+                   (setq level (- level 1)))
+                  (t
+                   (throw 'done nil)))))
+        (forward-char 1)
+        (= level -1)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Buffer-attached substrings
+;;;
+
+;; XXX These could be implemented much more efficiently
+
+(defun show-context-mode-buffer-substring (start end)
+  (let* ((str (buffer-substring start end))
+         (pos 0) (len (length str)))
+    (while (< pos len)
+      (put-text-property pos (+ 1 pos)
+                         's-c-m-source (+ start pos)
+                         str)
+      (setq pos (+ 1 pos)))
+    str))
+
+(defun show-context-mode-string-up-to (string limit)
+  (let* ((pos 0) (len (length string)) buf-pos (end len))
+    (while (and (< pos len) (= end len))
+      (let ((source (get-text-property pos 's-c-m-source string)))
+        (if source
+            (setq buf-pos source)
+          (if buf-pos
+              (setq buf-pos (+ 1 buf-pos)))))
+      (when (and buf-pos (>= buf-pos limit))
+        ;; Found the limit.  Trim
+        (setq end pos))
+      (setq pos (+ 1 pos)))
+    (substring string 0 end)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Getters
+;;;
 
 ;; cc-mode
 
@@ -664,41 +745,203 @@ change.  If no top-level block contains point, returns nil."
 
 ;; java-mode
 
-;; This has some odd behavior in certain circumstances.  For example,
-;; only up until the syntactic whitespace preceding the first method
-;; declaration, it will return the class declaration.
+(defgroup show-context-c nil
+  "Options affecting the computation of context in cc-mode buffers"
+  :group 'show-context)
+
+(defcustom show-context-mode-java-finagle-level 'simplify-all
+  "How hard to finagle Java context into a more compact form.
+
+If none, simply show the enclosing method or class.  If
+strip-comments, show the enclosing method or class, but remove
+comments.  If simplify-once, show a simplified form of just the
+immediately enclosing method or class (with comments stripped).
+If simplify-all, show a simplified form of the enclosing method
+or class that also indicates all of the further enclosing
+classes."
+  :type '(radio (const none)
+                (const strip-comments)
+                (const simplify-once)
+                (const simplify-all))
+  :group 'show-context-c)
+
+(defconst show-context-mode-java-modifiers
+  (regexp-opt '(;; Classes and methods
+                "public" "protected" "private"
+                "abstract" "static" "final" "strictfp"
+                ;; Methods only
+                "synchronized" "native") 'words))
+
+(defun show-context-mode-java-get-id ()
+  ;; XXX Unicode letters and digits
+  (when (looking-at "[A-Za-z_$][A-Za-z_$0-9]*")
+    (prog1
+        (show-context-mode-buffer-substring (match-beginning 0)
+                                            (match-end 0))
+      (goto-char (match-end 0)))))
+
+(defun show-context-mode-java-read-method-or-class ()
+  (save-restriction
+    (narrow-to-region (point-min) (point))
+    ;; Figure out if this is a method, class, or something else
+    (let ((found 'working) first-char)
+      ;; Find the beginning
+      (show-context-mode-skip-chars-backward "^{};")
+      ;; Skip over the fluff that comes at the beginning of a class or
+      ;; method declaration.  If it's a class declaration, it will
+      ;; become obvious in this process.  If it's a method
+      ;; declaration, we'll get as far as the return type and set
+      ;; found to 'maybe-method.
+      (while (eq found 'working)
+        (while (forward-comment 1))
+        (unless first-char
+          (setq first-char (point)))
+        (cond ((looking-at "class\\>")
+               ;; Found a class
+               (let ((cl (show-context-mode-buffer-substring
+                          (match-beginning 0) (match-end 0))))
+                 (goto-char (match-end 0))
+                 (while (forward-comment 1))
+                 ;; Get the class name
+                 (let ((id (show-context-mode-java-get-id)))
+                   (if id
+                       (setq found
+                             (list 'class first-char (point-max)
+                                   (concat cl " ") id
+                                   ;; extends, etc
+                                   (show-context-mode-buffer-substring
+                                    (point) (point-max))))
+                     (setq found nil)))))
+              ((looking-at show-context-mode-java-modifiers)
+               ;; Modifier (public, private, etc)
+               (goto-char (match-end 0)))
+              ((eql (char-after (point)) ?@)
+               ;; Annotation
+               (forward-char 1)
+               (if (not (show-context-mode-java-get-id))
+                   (setq found nil)
+                 (while (forward-comment 1))
+                 (if (looking-at "(")
+                     (forward-sexp))))
+              ((eql (char-after (point)) ?<)
+               ;; Type parameters
+               (unless (show-context-mode-forward-balanced ?< ?>)
+                 (setq found nil)))
+              (t
+               (setq found 'maybe-method))))
+      ;; Did we get to what might be the return type of a method (or a
+      ;; constructor name)?
+      (when (eq found 'maybe-method)
+        ;; Eat up identifiers and type parameters until we hit either
+        ;; a paren or something else
+        (let ((start (point)) (last-point (point)) (last-piece ""))
+          (while (eq found 'maybe-method)
+            ;; Get the next piece
+            (while (forward-comment 1))
+            (cond ((eobp)
+                   (setq found nil))
+                  ((eql (char-after (point)) ?<)
+                   ;; Type parameter
+                   (unless (show-context-mode-forward-balanced ?< ?>)
+                     (setq found nil)))
+                  ((eql (char-after (point)) ?\()
+                   ;; Method or constructor
+                   (let (;; Get return type
+                         (ret-type (show-context-mode-buffer-substring
+                                    start last-point))
+                         ;; Get argument list and throws
+                         (args (show-context-mode-buffer-substring
+                                (point) (point-max))))
+                     (setq found (list 'method first-char (point-max)
+                                       ret-type last-piece args))))
+                  (t
+                   ;; Return type or method name
+                   (setq last-point (point))
+                   (setq last-piece (show-context-mode-java-get-id))
+                   (unless last-piece
+                     (setq found nil)))))))
+      found)))
 
 (defun show-context-mode-java-get-context ()
-  (catch 'done
-    (let ((limit (point))
-          (strip-comments (eq show-context-mode-c-finagle-level
-                              'strip-comments)))
-      ;; Find the beginning of the method or class
-      (unless (show-context-mode-parser-up 1)
-        ;; Is point in a method declaration?
-        (show-context-mode-skip-chars-forward "^{;")
-        (unless (eql (char-after (point)) ?{)
-          ;; Nope.  Get the class declaration
-          (unless (show-context-mode-parser-up 0)
-            ;; Is point in the class declaration?
-            (show-context-mode-skip-chars-forward "^{;")
-            (unless (eql (char-after (point)) ?{)
-              ;; Nope, return nil
-              (throw 'done nil)))))
-      ;; Scootch the limit back
-      (setq limit (min (point) limit))
-      ;; Include the curly brace
-      (when (eql (char-after limit) ?{)
-        (setq limit (+ 1 limit)))
-      ;; Find the beginning of this expression
-      (show-context-mode-skip-chars-backward "^{};")
-      ;; Gather up
-      (when (< (point) limit)
-        (let ((text (show-context-mode-scrunch (point) limit
-                                               strip-comments)))
-          (if (string= text "")
-              nil
-            text))))))
+  (let ((limit (point))
+        (strip-comments (memq show-context-mode-java-finagle-level
+                              '(strip-comments simplify-once
+                                               simplify-all)))
+        (to-the-top (eq show-context-mode-java-finagle-level
+                        'simplify-all))
+        (enclosing nil))
+    ;; If I'm in the middle of a declaration, move to the open brace
+    ;; of the declaration.  However, also be careful not to walk out
+    ;; of the current block.
+    (show-context-mode-skip-chars-forward "^{};")
+    ;; The close curly brace is one level lower than the previous
+    ;; character, so get back into the level if we were in a block.
+    (when (eql (char-after (point)) ?})
+      (backward-char 1))
+    ;; Walk up the levels, looking for methods or classes
+    (let ((level (show-context-mode-parser-current-level)))
+      (while (and (>= level 0) (or to-the-top (null enclosing)))
+        ;; Find this level
+        (show-context-mode-parser-up level)
+        ;; Find what's at this level
+        (let ((thing (show-context-mode-java-read-method-or-class)))
+          ;; If I found something that starts before limit, accept it
+          (if (and thing
+                   (< (second thing) limit))
+              (setq enclosing (cons thing enclosing))))
+        ;; Try the next level up
+        (setq level (- level 1))))
+    (when (consp enclosing)
+      ;; Scrunch!
+      (let ((text
+             (case show-context-mode-java-finagle-level
+               ((none strip-comments)
+                ;; Include the open curly brace
+                (goto-char (third (car enclosing)))
+                (show-context-mode-skip-chars-forward "^{")
+                (unless (eobp)
+                  (forward-char 1))
+                ;; Scrunch text
+                (show-context-mode-scrunch (second (car enclosing))
+                                           (min (point)
+                                                limit)
+                                           strip-comments))
+               ((simplify-once simplify-all)
+                (let (pieces)
+                  (if (eq show-context-mode-java-finagle-level
+                          'simplify-once)
+                      (setq pieces (cdddr (car enclosing)))
+                    ;; Build a dot-separated list of all enclosing
+                    ;; names
+                    (dolist (enc enclosing)
+                      (when pieces
+                        (setq pieces (cons "." pieces)))
+                      (setq pieces (cons (fifth enc) pieces)))
+                    ;; Make the inner-most be first in the list
+                    (setq enclosing (nreverse enclosing))
+                    ;; Add the arguments/extends of the inner-most
+                    (setq pieces (cons (sixth (car enclosing))
+                                       pieces))
+                    ;; Reverse everything and prepend the return value
+                    ;; or "class "
+                    (setq pieces (cons (fourth (car enclosing))
+                                       (nreverse pieces))))
+                  (let ((str (apply #'concat pieces)))
+                    ;; Include the open curly brace
+                    (goto-char (third (car enclosing)))
+                    (show-context-mode-skip-chars-forward "^{")
+                    (unless (eobp)
+                      (setq str (concat str " "
+                                        (show-context-mode-buffer-substring
+                                         (point) (+ (point) 1)))))
+                    ;; Limit the string
+                    (setq str (show-context-mode-string-up-to str limit))
+                    (show-context-mode-scrunch-string str t))))
+               (t
+                (error "Unknown finagle level %s"
+                       show-context-mode-java-finagle-level)))))
+        (unless (string= text "")
+          text)))))
 
 (put 'java-mode 'show-context-mode-getter
      #'show-context-mode-java-get-context)
