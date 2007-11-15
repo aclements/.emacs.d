@@ -447,7 +447,7 @@ of that class can be found, defaults to that source file."
   (interactive "sClass: ")
   (find-file (jff-find-class (jff-parse-class class-name))))
 
-(eval-after-load 'cc-mode
+(eval-after-load "cc-mode"
   '(progn
      (message "Re-binding C-x C-f for java-find-file")
      (define-key java-mode-map (kbd "\C-x\C-f") #'java-find-file-or-class-at-point)))
