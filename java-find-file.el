@@ -22,6 +22,12 @@
 
 ;;; Commentary:
 
+;; To load the package, simply add
+;;   (require 'java-find-file)
+;; to your .emacs.  If you're concerned about start up time, you can
+;; instead load it lazily with
+;;   (add-hook 'java-mode-hook (lambda () (require 'java-find-file)))
+
 ;; To do
 ;; * Be able to specify alternate source directories for other
 ;;   packages.  I'm not sure if this should just be a sourcepath or if
@@ -443,7 +449,7 @@ of that class can be found, defaults to that source file."
 
 (eval-after-load 'cc-mode
   '(progn
-     (message "Binding C-x C-f to java-find-file-or-class-at-point")
+     (message "Re-binding C-x C-f for java-find-file")
      (define-key java-mode-map (kbd "\C-x\C-f") #'java-find-file-or-class-at-point)))
 
 (provide 'java-find-file)
