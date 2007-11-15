@@ -114,9 +114,9 @@ naming conventions and ignores sub-type imports."
              (ppoint (point-min))
              (pstate nil))
         (goto-char (point-min))
-        (let ((package nil) (imports '()) (star-imports '()))
+        (let ((package 'unknown) (imports '()) (star-imports '()))
           ;; Get the package name
-          (while (not package)
+          (while (eq package 'unknown)
             (if (not (re-search-forward jff-package-regex bound t))
                 (setq package '())
               (save-excursion
