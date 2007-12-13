@@ -48,7 +48,7 @@
 ;; 1 nil (point-min)) will move point to the first error in the
 ;; compilation buffer, or give a Lisp error if there are none.
 (setq compilation-window-height 10
-      compilation-context-lines 1
+;;      compilation-context-lines 1
       compilation-scroll-output t)
 
 (load "compile-improved.el")
@@ -133,9 +133,16 @@
      (add-to-list 'TeX-command-list
                   '("Make PS" "make %f" TeX-run-compile t t)
                   t)
+
+     ;; Always use rubber to compile LaTeX
+     (add-to-list 'TeX-expand-list
+                  '("%(rubberarg)"
+                    (lambda () (if TeX-PDF-mode "--pdf" ""))))
      (add-to-list 'TeX-command-list
-                  '("Rubber" "rubber %t" TeX-run-compile t t))
-     (setq TeX-command-default "Rubber")))
+                  '("Rubber" "rubber %(rubberarg) %t" TeX-run-compile t t))
+     (add-hook 'LaTeX-mode-hook
+               (lambda ()
+                 (setq TeX-command-default "Rubber")))))
 
 ;;; Fix flyspell
 
