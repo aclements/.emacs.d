@@ -139,7 +139,8 @@
                   '("%(rubberarg)"
                     (lambda () (if TeX-PDF-mode "--pdf" ""))))
      (add-to-list 'TeX-command-list
-                  '("Rubber" "rubber %(rubberarg) %t" TeX-run-compile t t))
+                  '("Rubber" "rubber %(rubberarg) -Wrefs -Wmisc %t"
+                    TeX-run-compile t t))
      (add-hook 'LaTeX-mode-hook
                (lambda ()
                  (setq TeX-command-default "Rubber")))))
