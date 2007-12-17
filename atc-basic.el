@@ -29,8 +29,13 @@ scroll bar."
   "Set frame colors right now and whenever a new frame is made.  This
 should be done from the Xresources, but this will work if that isn't
 present, and this doesn't hurt."
-  (add-hook 'after-make-frame-functions (function atc:set-frame-colors))
-  (atc:set-frame-colors nil))
+  (if window-system
+      (progn
+        (add-hook 'after-make-frame-functions (function atc:set-frame-colors))
+        (atc:set-frame-colors nil))
+    ;; Set the foreground color, but don't set the background color.
+    ;; This allows it to be transparent
+    (set-foreground-color "White")))
 
 ;;; Buffer look
 
