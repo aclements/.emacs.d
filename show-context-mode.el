@@ -770,7 +770,22 @@ classes."
                 "public" "protected" "private"
                 "abstract" "static" "final" "strictfp"
                 ;; Methods only
-                "synchronized" "native") 'words))
+                "synchronized" "native") 'words)
+  "The set of keywords that can appear before the return type of
+a method declaration.")
+
+(defconst show-context-mode-java-block-keywords
+  (regexp-opt '("if" "else" "switch" "while" "do" "for"
+                "try" "catch" "finally"))
+  "The set of keywords that introduce a statement that may be
+followed by a block.  This is used to disambiguate package
+private methods from such statements, since the only obvious
+syntactic difference is that the \"name\" of the method will be a
+Java keyword.
+
+Note that this should _not_ include the synchronized keyword, as
+that can appear in a method signature.  This particular case is
+handled specially.")
 
 (defun show-context-mode-java-get-id ()
   ;; XXX Unicode letters and digits
@@ -795,7 +810,10 @@ classes."
       (while (eq found 'working)
         (while (forward-comment 1))
         (unless first-char
-          (setq first-char (point)))
+          (setq first-char (point))
+          ;; Check if it's simply a statement that introduces a block
+          (if (looking-at show-context-mode-java-block-keywords)
+              (setq found nil)))
         (cond ((looking-at "class\\>")
                ;; Found a class
                (let ((cl (show-context-mode-buffer-substring
@@ -827,8 +845,21 @@ classes."
                ;; Type parameters
                (unless (show-context-mode-forward-balanced ?< ?>)
                  (setq found nil)))
+              ((eql (char-after (point)) ?\[)
+               ;; Array type
+               (unless (show-context-mode-forward-balanced ?\[ ?\])
+                 (setq found nil)))
+              ((eql (char-after (point)) ?\()
+               ;; We never found a method or class name.  This
+               ;; happens, for example, when we're looking at a
+               ;; synchronized block.  We can't ignore those
+               ;; out-right, because it could be a synchronized
+               ;; modifier on a method, but we'll skip over it and
+               ;; then immediately hit the paren on the condition.
+               (setq found nil))
               (t
-               (setq found 'maybe-method))))
+               (if (eq found 'working)
+                   (setq found 'maybe-method)))))
       ;; Did we get to what might be the return type of a method (or a
       ;; constructor name)?
       (when (eq found 'maybe-method)
@@ -843,6 +874,10 @@ classes."
                   ((eql (char-after (point)) ?<)
                    ;; Type parameter
                    (unless (show-context-mode-forward-balanced ?< ?>)
+                     (setq found nil)))
+                  ((eql (char-after (point)) ?\[)
+                   ;; Array type
+                   (unless (show-context-mode-forward-balanced ?\[ ?\])
                      (setq found nil)))
                   ((eql (char-after (point)) ?\()
                    ;; Method or constructor
