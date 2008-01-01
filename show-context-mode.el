@@ -1,6 +1,7 @@
-;;; show-context-mode.el --- display context in the header line
+;;; show-context-mode.el --- Display context in the header line for
+;;; functions, classes, and methods in C/C++, Java, and Python
 
-;; Copyright (C) 2005 Austin Clements
+;; Copyright (C) 2005-2008 Austin Clements
 
 ;; Authors:    Austin Clements (amdragon@mit.edu)
 ;; Maintainer: Austin Clements (amdragon@mit.edu)
@@ -22,26 +23,32 @@
 
 ;;; Commentary:
 
-;; Computer screens are small.  Even big ones are small.  In
-;; particular, even very tall computer screens are shorter than an
-;; infinitely long strip of paper.  Unfortunately, in many languages,
-;; the meaning of the current line of code depends heavily on its
-;; context, which may be influenced by lines that occur an unbounded
-;; distance above the top of the window.  Show-context mode is meant
-;; to help with this by scrunching together pieces of the buffer that
-;; appear above the top of the window into one header line that
-;; summarizes everything you need to know, but otherwise can't see, to
-;; understand the context of the visible buffer.
+;; Computer screens are small.  Even big ones are too small.
+;; Unfortunately, in many languages, the meaning of the current line
+;; of code depends heavily on its context, which may be influenced by
+;; lines that occur an unbounded distance above the top of the window.
+;; Show-context mode is meant to help with this by scrunching together
+;; pieces of the buffer that appear above the top of the window into
+;; one header line that summarizes everything you need to know, but
+;; otherwise can't see, to understand the context of the visible
+;; buffer.
 
 ;; Currently show-context mode vaguely understands C/C++ code and
-;; understands Python code quite well (both are about in proportion to
-;; how screwed-up their syntax is).  It's designed to be easily
-;; extensible to be able to compute context for any editing mode.
+;; understands Java and Python code quite well.  It's designed to be
+;; easily extensible to be able to compute context for any editing
+;; mode.
 
 ;; The concept for show-context-mode is based on Semantic's stickyfunc
 ;; mode.  Originally, this was just an attempt to do the same thing
 ;; without the five minute startup time, but has since grown into
 ;; something more conceptually general.
+
+;; To install, add the following to your .emacs:
+;;   (autoload 'show-context-mode "show-context-mode" nil t)
+;;   (add-hook 'c-mode-hook 'show-context-mode)
+;;   (add-hook 'c++-mode-hook 'show-context-mode)
+;;   (add-hook 'java-mode-hook 'show-context-mode)
+;;   (add-hook 'python-mode-hook 'show-context-mode)
 
 ;;; To do:
 
