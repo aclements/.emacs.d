@@ -293,6 +293,27 @@ well with `atc:setup-server'."
       (global-set-key "\C-ca" 'org-agenda)))
   (setq org-hide-leading-stars t))
 
+;;; icomplete bug fix
+
+(eval-after-load "icomplete"
+  '(defun icomplete-get-keys (func-name)
+     "Return strings naming keys bound to `func-name', or nil if none.
+Examines the prior, not current, buffer, presuming that current buffer
+is minibuffer."
+     (if (commandp func-name)
+         (save-excursion
+           (let* ((sym (intern func-name))
+                  (buf (other-buffer nil t))
+                  (keys (save-excursion (set-buffer buf) (where-is-internal sym))))
+             (if keys
+                 (concat "<"
+                         (mapconcat 'key-description
+                                    (sort keys
+                                          #'(lambda (x y)
+                                              (< (length x) (length y))))
+                                    ", ")
+                         ">")))))))
+
 ;;; Everything
 
 (defun atc:basic-setup-all ()
