@@ -348,14 +348,66 @@ recognized by tasks-parse-date.")
   (let ((mm (make-sparse-keymap)))
     (define-key mm (kbd "C-c i")   #'tasks-jump-or-insert)
     (define-key mm (kbd "C-c g")   #'tasks-jump-to-date)
-    (define-key mm (kbd "C-c c")   #'tasks-dwim)
     (define-key mm (kbd "C-c C-c") #'tasks-dwim)
+    (define-key mm (kbd "C-c c")   #'tasks-dwim)
     (define-key mm (kbd "C-c .")   #'tasks-jump-to-today)
     (define-key mm (kbd "C-c C-.") #'tasks-jump-to-today)
     mm))
 
 (define-derived-mode tasks-mode text-mode "Tasks"
-  "Major mode for editing tasks files."
+  "Major mode for editing tasks files.
+
+== Format ==
+
+A task file is simply a structured list of tasks and events,
+sorted and grouped by date.  For example,
+
+Wednesday, March 12, 2008
+   3:00p-4:00p Event
+     Location: Elsewhere
+ + Completed task
+   + Subtask
+
+Thursday, March 13, 2008
+ - Incomplete task
+ ~ Irrelevant task
+
+tasks-mode places few restrictions on the structure of the file,
+but does support a few conventions.  A task line must begin with
+at least one space, followed by a state indicator, followed by a
+space and then a description.  A task can be in one of three
+states:
+
+ + Indicates a completed task
+ - Indicates an incomplete task
+ ~ Indicates an \"irrelevant\" task such as one that wasn't
+   actually completed, but that you don't want to be reminded
+   about
+
+Dates can be in a number of formats (see `tasks-date-regexes'),
+but there is one canonical format (see
+`tasks-date-canonical-regex'), which defaults to the one shown
+above.  tasks-mode assumes that the dates are in sorted order.
+
+== Editing ==\\<tasks-mode-map>
+
+Most editing can be done with the DWIM command \"\\[tasks-dwim]\".
+When point is on a task, this toggles the task between complete
+and incomplete.  When point is on a date, this expands anything
+that can be recognized as a date into the canonical date form,
+which allows for quick entry of dates in a terse form (such as
+\"2008-03-12\").
+
+New entries can be inserted with \"\\[tasks-jump-or-insert]\", which
+brings up a calendar to prompt for a date.
+
+== Navigation ==
+
+To jump to the current date (or as close as possible, if there
+are no entries for the current date), use \"\\[tasks-jump-to-today]\".
+
+To jump to an arbitrary date using the calendar prompt, use \
+\"\\[tasks-jump-to-date]\"."
 
   ;; Set up font lock
   (if (boundp 'font-lock-defaults)
