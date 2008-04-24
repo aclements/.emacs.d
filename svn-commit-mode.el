@@ -1,6 +1,6 @@
 ;;; svn-commit-mode.el --- subversion commit log major mode
 
-;; Copyright (C) 2005 Austin Clements
+;; Copyright (C) 2005-2008 Austin Clements
 
 ;; Authors:    Austin Clements (amdragon@mit.edu)
 ;; Maintainer: Austin Clements (amdragon@mit.edu)
@@ -22,21 +22,33 @@
 
 ;;; Commentary:
 
-;; Features
-;; * Gratuitous color
-;; * Disables Emacs features (saveplace and backups) that just get in
-;;   the way with transient non-uniquely-named files
-;; * Fixes paragraph filling so it ignores the ignore block
-;; * Removes extraneous trailing whitespace when saving
-;; * Can offer to restore old commit messages left over by commit
-;;   failures and delete the old message.
+;; This major mode provides support for editing Subversion commit
+;; messages.  It enhances editing by customizing paragraph filling,
+;; automatically cleaning up whitespace, and providing font locking.
+;; Furthermore, it integrates with Subversion's failed commit
+;; behavior, offering to restore the failed commit message and clean
+;; up the left over file.
 
-;; The recommended auto-mode regexp is:
-;; "svn-commit\\(\\.[0-9]+\\)?\\.tmp"
+;; Features
+;; * Modifies paragraph filling to ignore the information block
+;;   Subversion appends to commit messages
+;; * Automatically removes extraneous trailing whitespace when saving
+;;   so that logs don't contain extra vertical space
+;; * Gratuitous color
+;; * Previews and offers to restore and delete old commit messages
+;;   left over by failed commits
+;; * Disables backup files and the saveplace package when editing
+;;   commit messages
+
+;; To install this mode, add the following lines to your .emacs file:
+;;   (autoload 'svn-commit-mode "svn-commit-mode" nil t)
+;;   (add-to-list 'auto-mode-alist
+;;                (cons "svn-commit\\(\\.[0-9]+\\)?\\.tmp"
+;;                      'svn-commit-mode)
 
 ;; To do
-;; * Make it possible to easily view the diff of any file being
-;;   checked in
+;; * Make it possible to easily view the diffs of files being
+;;   committed
 
 ;;; Code:
 
@@ -108,6 +120,7 @@ left over by a earlier failed commit and offer to restore its contents
 into this commit message."
   :type 'boolean
   :group 'svn-commit-mode)
+
 (defcustom svn-commit-show-old-message t
   "Display the old commit message when offering to restore it.
 
@@ -115,6 +128,7 @@ While offering to restore an old commit message, split the window
 and display the old commit message."
   :type 'boolean
   :group 'svn-commit-mode)
+
 (defcustom svn-commit-delete-old-message t
   "Delete the old commit message on save.
 
@@ -126,6 +140,7 @@ then don't bother prompting."
           (const :tag "Offer to delete" t)
           (const :tag "Automatically delete" auto))
   :group 'svn-commit-mode)
+
 (defcustom svn-commit-mode-hook nil
   "Normal hook run when entering svn commit mode."
   :type 'hook
@@ -289,13 +304,17 @@ message is remembered so it can be deleted later by the save hook
               (goto-char (point-min))
               (buffer-substring
                (point)
-               (if (re-search-forward svn-commit-ignore-regexp nil t)
-                   (match-beginning 0)
-                 (point-max))))))
+               (progn
+                 (goto-char
+                  (if (re-search-forward svn-commit-ignore-regexp nil t)
+                      (match-beginning 0)
+                    (point-max)))
+                 (skip-chars-backward " \n\t")
+                 (point))))))
       (insert contents)
       (when (and svn-commit-delete-old-message
                  (or (eq svn-commit-delete-old-message 'auto)
-                     (yes-or-no-p
+                     (y-or-n-p
                       (format "Delete old commit message %s on save? "
                               filename))))
         (setq svn-commit-restored-filename filename)
