@@ -50,6 +50,19 @@
 ;;                (cons "svn-commit\\(\\.[0-9]+\\)?\\.tmp"
 ;;                      'svn-commit-mode)
 
+;; To do
+;; * Make the status lines interactive.  This would only be possible
+;;   if Emacs were driving subversion.  Have an 'svnci' script that
+;;   invokes Emacs and puts it in svnci-mode, then invokes svn
+;;   appropriately when Emacs exits.  This script should mimic the
+;;   behavior of svn (defaulting to all changes if no arguments are
+;;   supplied, etc).  Have up to three sections in the commit message:
+;;   "The following changes will be committed", "The following files
+;;   will be added and committed", and "The following changes will not
+;;   be committed".  It could allow free-form editing of these, but
+;;   considering how structured they are, it's probably better not to
+;;   (this would also allow these sections to be hidden when empty).
+
 ;;; Code:
 
 (defgroup svn-commit-mode nil
@@ -459,3 +472,5 @@ message."
           (set-process-sentinel proc
                                 (lambda (p e)
                                   (message "svn diff %s" e))))))))
+
+(provide 'svn-commit-mode)
