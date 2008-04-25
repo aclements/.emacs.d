@@ -197,6 +197,11 @@ then don't bother prompting."
   :type 'function
   :group 'svn-commit-mode)
 
+(defcustom svn-commit-diff-height 3
+  "Height of the commit message window when viewing a diff."
+  :type 'integer
+  :group 'svn-commit-mode)
+
 
 (defvar svn-commit-restored-filename nil
   "If this commit message was restored from an old commit message,
@@ -424,7 +429,8 @@ message."
              (name (concat "diff " path)))
         ;; Split the message window and create a buffer for the diff
         (delete-other-windows)
-        (select-window (split-window nil (max 3 window-min-height)))
+        (select-window (split-window nil (max svn-commit-diff-height
+                                              window-min-height)))
         (switch-to-buffer (generate-new-buffer name))
         ;; Put this buffer in to diff mode
         (funcall svn-commit-diff-mode)
