@@ -63,6 +63,9 @@
 ;;   considering how structured they are, it's probably better not to
 ;;   (this would also allow these sections to be hidden when empty).
 ;; ** k: don't commit file, a: commit/add file
+;; * Disable flyspell below the cut line
+;; * Recenter the message buffer when exiting a diff
+;; * Make whitespace trimming a customizable option
 
 ;;; Code:
 
@@ -131,7 +134,7 @@
 highlight paths in the commit message."
   :group 'svn-commit-mode)
 
-(defconst svn-commit-ignore-regexp
+(defconst svn-commit-info-regexp
   "^--This line, and those below, will be ignored--\n"
   "The regexp to match at the beginning of the svn commit message's
 ignore block.")
@@ -159,20 +162,14 @@ of status lines in the commit message's ignore block.")
          (and msg (message "%s" (substitute-command-keys msg))))))
 (put 'svn-commit-stat-line 'follow-link t)
 (put 'svn-commit-stat-line 'pointer x-sensitive-text-pointer-shape)
-(put 'svn-commit-stat-line 'keymap svn-commit-stat-line-map)
 
 (defvar svn-commit-font-lock-keywords
   (flet ((matcher (re face)
            `(,(concat "^" re "[ L][ +]\\(?:[ S][ K]\\)? \\(.*\\)")
              (0 '(face ,face
-                  category svn-commit-stat-line
-                  svn-commit-msg
-                  "\\<svn-commit-stat-line-map>\\[svn-commit-visit-diff]: visit diff"
-                  svn-commit-mouse-msg
-                  "\\<svn-commit-stat-line-map>\\[svn-commit-mouse-visit-diff]: visit diff"
-                  ))
+                  category svn-commit-stat-line))
              (1 '(face svn-path-face svn-commit-path t) prepend))))
-    `((,svn-commit-ignore-regexp . svn-commit-info-face)
+    `((,svn-commit-info-regexp . svn-commit-info-face)
       ,(matcher "\\(?:C[ CM]\\|[ ADIMRX?!~]C\\)" 'svn-commit-conflict-face)
       ,(matcher "[AR][ M]" 'svn-commit-added-face)
       ,(matcher "D[ M]" 'svn-commit-deleted-face)
@@ -270,15 +267,29 @@ has been deleted).")
   (setq backup-inhibited t)
 
   ;; Fix paragraph filling
-  (ad-activate 'fill-paragraph)
+  (make-variable-buffer-local 'paragraph-separate)
+  (setq paragraph-separate
+        (concat svn-commit-info-regexp "\\|" paragraph-separate))
 
   ;; Cleanup extraneous whitespace on save (really, svn should do
   ;; this, but judging by the flamewars around this issue, it's not
   ;; going to happen)
   (add-hook 'local-write-file-hooks (function svn-cleanup-whitespace))
 
+  ;; Activate the hyperlinks
+  (save-excursion
+    (when (re-search-forward svn-commit-info-regexp nil t)
+      (svn-commit-without-modifying
+         (add-text-properties
+          (match-end 0) (point-max)
+          `(svn-commit-msg
+            "\\<svn-commit-stat-line-map>\\[svn-commit-visit-diff]: visit diff"
+            svn-commit-mouse-msg
+            "\\<svn-commit-stat-line-map>\\[svn-commit-mouse-visit-diff]: visit diff"
+            keymap ,svn-commit-stat-line-map)))))
+
   ;; Make the ignore block immutable
-  (svn-commit-immutate svn-commit-ignore-regexp)
+  (svn-commit-immutate svn-commit-info-regexp)
 
   ;; Prompt to load an old commit message, if there is one.  This is
   ;; run off an idle timer so Emacs gets a chance to actually display
@@ -320,37 +331,13 @@ to the end of the buffer read-only."
           (add-text-properties (- (match-beginning 0) 1) (point-max)
                                '(read-only t)))))))
 
-(defadvice fill-paragraph (around svn-ignore-lines)
-  "If in svn-commit-mode, cause paragraph filling to not extend to the
-ignore block.  If the point is in the ignore block, completely ignores
-the fill request."
-  (if (not (eq major-mode 'svn-commit-mode))
-      ad-do-it
-    (let ((ignore-begin
-           ;; Look forward for the ignore block
-           (save-excursion
-             (when (re-search-forward svn-commit-ignore-regexp nil t)
-               (match-beginning 0)))))
-      (if (null ignore-begin)
-          ;; If point is in the ignore block, don't do anything
-          (unless
-              (save-excursion
-                (goto-char (point-min))
-                (re-search-forward svn-commit-ignore-regexp nil t))
-            ;; There is no ignore block
-            ad-do-it)
-        ;; Narrow to exclude the ignore block and then fill
-        (save-restriction
-          (narrow-to-region (point-min) ignore-begin)
-          ad-do-it)))))
-
 (defun svn-cleanup-whitespace ()
   "Remove any extra whitespace between the user text and the ignore
 block."
   (save-excursion
     (goto-char (point-min))
     ;; Nuke all of the whitespace leading up to the ignore block
-    (when (re-search-forward svn-commit-ignore-regexp nil t)
+    (when (re-search-forward svn-commit-info-regexp nil t)
       (goto-char (match-beginning 0))
       ;; Leave the ignore line at the beginning of the line
       (if (not (bobp))
@@ -425,7 +412,7 @@ message is remembered so it can be deleted later by the save hook
                (point)
                (progn
                  (goto-char
-                  (if (re-search-forward svn-commit-ignore-regexp nil t)
+                  (if (re-search-forward svn-commit-info-regexp nil t)
                       (match-beginning 0)
                     (point-max)))
                  (skip-chars-backward " \n\t")
