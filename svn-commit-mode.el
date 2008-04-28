@@ -57,13 +57,16 @@
 ;;   appropriately when Emacs exits.  This script should mimic the
 ;;   behavior of svn (defaulting to all changes if no arguments are
 ;;   supplied, etc).  Have up to three sections in the commit message:
-;;   "The following changes will be committed", "The following files
-;;   will be added and committed", and "The following changes will not
+;;   "The following files will be committed", "The following files
+;;   will be added and committed", and "The following files will not
 ;;   be committed".  It could allow free-form editing of these, but
 ;;   considering how structured they are, it's probably better not to
 ;;   (this would also allow these sections to be hidden when empty).
+;; ** k: don't commit file, a: commit/add file
 
 ;;; Code:
+
+(require 'cl)
 
 (defgroup svn-commit-mode nil
   "Mode for editing Subversion commit messages.")
@@ -100,8 +103,16 @@
   "Face used for removed files."
   :group 'svn-commit-mode)
 
-(defconst svn-commit-ignore-face 'svn-commit-ignore-face)
-(defface svn-commit-ignore-face
+(defconst svn-commit-conflict-face 'svn-commit-conflict-face)
+(defface svn-commit-conflict-face
+  '((((class color))
+     (:background "red"))
+    (t (:inherit svn-commit-file-face)))
+  "Face used for conflict files."
+  :group 'svn-commit-mode)
+
+(defconst svn-commit-info-face 'svn-commit-info-face)
+(defface svn-commit-info-face
   '((((class color) (min-colors 9))
      (:inherit font-lock-comment-face))
     ;; font-lock-comment-face is completely unhelpful in low color
@@ -127,8 +138,8 @@ ignore block.")
 
 (defvar svn-commit-stat-line-map
   (let ((map (make-sparse-keymap)))
-    (define-key map [mouse-2] 'svn-commit-mouse-visit-diff)
-    (define-key map "\r" 'svn-commit-visit-diff)
+    (define-key map [mouse-2] #'svn-commit-mouse-visit-diff)
+    (define-key map "\r" #'svn-commit-visit-diff)
     map)
   "Keymap applied to status lines in the commit message's ignore
 block.  By default, these bindings visit diffs when status lines
@@ -138,32 +149,39 @@ are selected.")
   "A variable whose properties are used as the default properties
 of status lines in the commit message's ignore block.")
 (put 'svn-commit-stat-line 'mouse-face 'highlight)
-(put 'svn-commit-stat-line
-     'help-echo "mouse-2, RET: visit diff in other window")
-(put 'svn-commit-stat-line
-     'point-entered (lambda (o n) (message "RET: visit diff in other window")))
+(put 'svn-commit-stat-line 'help-echo
+     (lambda (w o p)
+       (let ((msg (get-text-property p 'svn-commit-mouse-msg o)))
+         (and msg (substitute-command-keys msg)))))
+(put 'svn-commit-stat-line 'point-entered
+     (lambda (o n)
+       (let ((msg (get-text-property n 'svn-commit-msg)))
+         (and msg (message "%s" (substitute-command-keys msg))))))
 (put 'svn-commit-stat-line 'follow-link t)
 (put 'svn-commit-stat-line 'pointer x-sensitive-text-pointer-shape)
 (put 'svn-commit-stat-line 'keymap svn-commit-stat-line-map)
 
 (defvar svn-commit-font-lock-keywords
-  `((,svn-commit-ignore-regexp . svn-commit-ignore-face)
-    ("^A[ M] [ +] \\(.*\\)"
-     (0 '(face svn-commit-added-face
-          category svn-commit-stat-line))
-     (1 '(face svn-path-face
-          svn-commit-path t) prepend))
-    ("^M[ M] [ +] \\(.*\\)"
-     (0 '(face svn-commit-modified-face
-          category svn-commit-stat-line))
-     (1 '(face svn-path-face
-          svn-commit-path t) prepend))
-    ("^D[ M] [ +] \\(.*\\)"
-     (0 '(face svn-commit-deleted-face
-          category svn-commit-stat-line))
-     (1 '(face svn-path-face
-          svn-commit-path t) prepend))
-    ("^[ AMD]M [ +] .*" . svn-commit-modified-face)))
+  (flet ((matcher (re face)
+           `(,(concat "^" re "[ L][ +]\\(?:[ S][ K]\\)? \\(.*\\)")
+             (0 '(face ,face
+                  category svn-commit-stat-line
+                  svn-commit-msg
+                  "\\<svn-commit-stat-line-map>\\[svn-commit-visit-diff]: visit diff"
+                  svn-commit-mouse-msg
+                  "\\<svn-commit-stat-line-map>\\[svn-commit-mouse-visit-diff]: visit diff"
+                  ))
+             (1 '(face svn-path-face svn-commit-path t) prepend))))
+    `((,svn-commit-ignore-regexp . svn-commit-info-face)
+      ,(matcher "\\(?:C[ CM]\\|[ ADIMRX?!~]C\\)" 'svn-commit-conflict-face)
+      ,(matcher "[AR][ M]" 'svn-commit-added-face)
+      ,(matcher "D[ M]" 'svn-commit-deleted-face)
+      ,(matcher "\\(?:M[ M]\\| M\\)" 'svn-commit-modified-face)
+      ,(matcher "[X!~][ M]" 'svn-commit-conflict-face)
+      ,(matcher "\\? " 'default)))
+  "Font lock keywords for `svn-commit-mode'.  Used to highlight
+the ignore line and status lines and also set non-face properties
+on the status lines to make them hyperlinks.")
 
 ;; Customizable variables
 (defcustom svn-commit-mode-hook nil
@@ -227,7 +245,8 @@ has been deleted).")
 (define-derived-mode svn-commit-mode text-mode "SVN-Commit"
   "Major mode for editing svn commit log messages"
 
-  ;; Colorize the ignored part of the log message
+  ;; Colorize the ignored part of the log message and make hyperlink
+  ;; properties work
   (if (boundp 'font-lock-defaults)
       (make-local-variable 'font-lock-defaults))
   (setq font-lock-defaults
@@ -258,23 +277,8 @@ has been deleted).")
   ;; going to happen)
   (add-hook 'local-write-file-hooks (function svn-cleanup-whitespace))
 
-  ;; Set text properties on the ignore block
-  (save-excursion
-    (goto-char (point-min))
-    (when (re-search-forward svn-commit-ignore-regexp nil t)
-      ;; Changing text properties updates the undo list and modifies
-      ;; the buffer; inhibit this
-      (let ((buffer-undo-list t)
-            (modified (buffer-modified-p)))
-        ;; Make the ignore block immutable.  We also grab the newline
-        ;; before the ignore block to make it impossible to insert
-        ;; text at the beginning of the ignore line.  We could use a
-        ;; front-sticky property, but then users could delete the
-        ;; initial blank line and wind up with a completely read-only
-        ;; buffer.
-        (add-text-properties (- (match-beginning 0) 1) (point-max)
-                             '(read-only t))
-        (set-buffer-modified-p modified))))
+  ;; Make the ignore block immutable
+  (svn-commit-immutate svn-commit-ignore-regexp)
 
   ;; Prompt to load an old commit message, if there is one.  This is
   ;; run off an idle timer so Emacs gets a chance to actually display
@@ -287,6 +291,34 @@ has been deleted).")
                                (call-interactively
                                 (function
                                  svn-load-old-commit-message)))))))
+
+(defmacro svn-commit-without-modifying (&rest body)
+  (let ((modified-var (gensym "modified")))
+    `(let ((buffer-undo-list t)
+           (,modified-var (buffer-modified-p)))
+       (unwind-protect
+           (progn ,@body)
+         (set-buffer-modified-p ,modified-var)))))
+
+(defun svn-commit-immutate (regexp)
+  "Search for regexp from the beginning of the buffer and make
+everything from the point one before the beginning of the regexp
+to the end of the buffer read-only."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward regexp nil t)
+      ;; Changing text properties updates the undo list and modifies
+      ;; the buffer; inhibit this
+      (svn-commit-without-modifying
+        (let ((inhibit-read-only t))
+          ;; Make the ignore block immutable.  We also grab the
+          ;; newline before the ignore block to make it impossible to
+          ;; insert text at the beginning of the ignore line.  We
+          ;; could use a front-sticky property, but then users could
+          ;; delete the initial blank line and wind up with a
+          ;; completely read-only buffer.
+          (add-text-properties (- (match-beginning 0) 1) (point-max)
+                               '(read-only t)))))))
 
 (defadvice fill-paragraph (around svn-ignore-lines)
   "If in svn-commit-mode, cause paragraph filling to not extend to the
