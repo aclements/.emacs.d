@@ -32,7 +32,7 @@
 ;; message and clean up the stale file.
 
 ;; Features
-;; * Modifies paragraph filling to not wrap the information block
+;; * Modifies paragraph filling to not wrap the file status block
 ;;   Subversion appends to commit messages
 ;; * Automatically removes extraneous trailing whitespace when saving
 ;;   so that logs don't contain extra vertical space
@@ -42,7 +42,7 @@
 ;; * File status lines are hyperlinked to provide easy access to
 ;;   diff's between the working copy and the base revision
 ;; * Disables backup files and the saveplace package when editing
-;;   commit messages
+;;   commit messages and inhibits flyspell in the file status block
 
 ;; To install this mode, add the following lines to your .emacs file:
 ;;   (autoload 'svn-commit-mode "svn-commit-mode" nil t)
@@ -63,9 +63,11 @@
 ;;   considering how structured they are, it's probably better not to
 ;;   (this would also allow these sections to be hidden when empty).
 ;; ** k: don't commit file, a: commit/add file
-;; * Disable flyspell below the cut line
 ;; * Recenter the message buffer when exiting a diff
 ;; * Make whitespace trimming a customizable option
+;; * If svnci is going to be used from within a long-running emacs,
+;;   this needs to clean up its buffer better and play more nicely
+;;   with window layout
 
 ;;; Code:
 
@@ -154,12 +156,15 @@ of status lines in the commit message's ignore block.")
 (put 'svn-commit-stat-line 'mouse-face 'highlight)
 (put 'svn-commit-stat-line 'help-echo
      (lambda (w o p)
-       (let ((msg (get-text-property p 'svn-commit-mouse-msg o)))
-         (and msg (substitute-command-keys msg)))))
+       (let ((f (get-char-property p 'svn-commit-msg o)))
+         (and f (funcall f o p)))))
 (put 'svn-commit-stat-line 'point-entered
      (lambda (o n)
-       (let ((msg (get-text-property n 'svn-commit-msg)))
-         (and msg (message "%s" (substitute-command-keys msg))))))
+       (let ((f (get-char-property n 'svn-commit-msg))
+             ;; Avoid infinite loops due to point movement in message
+             ;; function
+             (inhibit-point-motion-hooks t))
+         (and f (message "%s" (funcall f (current-buffer) n))))))
 (put 'svn-commit-stat-line 'follow-link t)
 (put 'svn-commit-stat-line 'pointer x-sensitive-text-pointer-shape)
 
@@ -174,8 +179,8 @@ of status lines in the commit message's ignore block.")
       ,(matcher "[AR][ M]" 'svn-commit-added-face)
       ,(matcher "D[ M]" 'svn-commit-deleted-face)
       ,(matcher "\\(?:M[ M]\\| M\\)" 'svn-commit-modified-face)
-      ,(matcher "[X!~][ M]" 'svn-commit-conflict-face)
-      ,(matcher "\\? " 'default)))
+      ,(matcher "[!~][ M]" 'svn-commit-conflict-face)
+      ,(matcher "[IX?][ M]" 'default)))
   "Font lock keywords for `svn-commit-mode'.  Used to highlight
 the ignore line and status lines and also set non-face properties
 on the status lines to make them hyperlinks.")
@@ -278,15 +283,14 @@ has been deleted).")
 
   ;; Activate the hyperlinks
   (save-excursion
+    (goto-char (point-min))
     (when (re-search-forward svn-commit-info-regexp nil t)
-      (svn-commit-without-modifying
-         (add-text-properties
-          (match-end 0) (point-max)
-          `(svn-commit-msg
-            "\\<svn-commit-stat-line-map>\\[svn-commit-visit-diff]: visit diff"
-            svn-commit-mouse-msg
-            "\\<svn-commit-stat-line-map>\\[svn-commit-mouse-visit-diff]: visit diff"
-            keymap ,svn-commit-stat-line-map)))))
+      (let ((ov (make-overlay (point) (point-max))))
+        (overlay-put ov 'keymap svn-commit-stat-line-map)
+        (overlay-put ov 'svn-commit-msg
+                     (lambda (obj pos)
+                       (substitute-command-keys "\\<svn-commit-stat-line-map>\
+\\[svn-commit-mouse-visit-diff], \\[svn-commit-visit-diff]: visit file/diff"))))))
 
   ;; Make the ignore block immutable
   (svn-commit-immutate svn-commit-info-regexp)
@@ -304,6 +308,8 @@ has been deleted).")
                                  svn-load-old-commit-message)))))))
 
 (defmacro svn-commit-without-modifying (&rest body)
+  "Evaluate BODY without changing the buffer's modified status or
+its undo list."
   (let ((modified-var (gensym "modified")))
     `(let ((buffer-undo-list t)
            (,modified-var (buffer-modified-p)))
@@ -441,14 +447,16 @@ message."
     (setq svn-commit-restored-filename nil)))
 
 (defun svn-commit-mouse-visit-diff (event)
-  "Visit the SVN diff of the file selected by the mouse."
+  "Call `svn-commit-visit-diff' on the file selected by the mouse."
   (interactive "e")
   (let ((posn (event-start event)))
     (select-window (posn-window posn) t)
     (svn-commit-visit-diff (posn-point posn))))
 
 (defun svn-commit-visit-diff (pos)
-  "Visit the SVN diff of the file selected at point."
+  "Visit the SVN diff of the file selected at point.  If taking
+the diff of the selected file doesn't make sense (for example,
+the file was just added), then simply visit the file."
   (interactive "d")
   ;; Check that we're on a commit line by checking its text category
   (let ((category (get-text-property pos 'category)))
@@ -458,38 +466,51 @@ message."
              (beg  (next-single-property-change beg1 'svn-commit-path))
              (end  (next-single-property-change beg  'svn-commit-path))
              (path (buffer-substring-no-properties beg end))
+             (type (char-after beg1))
              (name (concat "diff " path)))
         ;; Split the message window and create a buffer for the diff
         (delete-other-windows)
         (select-window (split-window nil (max svn-commit-diff-height
                                               window-min-height)))
-        (switch-to-buffer (generate-new-buffer name))
-        ;; Put this buffer in to diff mode
-        (funcall svn-commit-diff-mode)
-        ;; Make the buffer read-only
-        (setq buffer-read-only t)
-        ;; Define 'q' to destroy the window and return to the message
-        (let ((ro-map (assq 'buffer-read-only minor-mode-overriding-map-alist)))
-          (when ro-map
-            (define-key (cdr ro-map) "q" 'delete-window)))
-        ;; Retrieve the diff, asynchronously
-        (let ((proc (apply #'start-process name (current-buffer)
-                           "svn" "diff" (append svn-commit-diff-args
-                                                (list path)))))
-          ;; Filter the process in the normal way, but don't move
-          ;; point
-          (set-process-filter proc
-                              (lambda (p s)
-                                (with-current-buffer (process-buffer p)
-                                  (save-excursion
-                                    (goto-char (process-mark p))
-                                    (let ((inhibit-read-only t))
-                                      (insert s))
-                                    (set-marker (process-mark p) (point))))))
-          ;; Put the process status in the echo area instead of the
-          ;; buffer
-          (set-process-sentinel proc
-                                (lambda (p e)
-                                  (message "svn diff %s" e))))))))
+        (if (memq type '(?A ?C ?I ?R ?X ??))
+            ;; Simply visit the file.
+            (find-file path)
+          (switch-to-buffer (generate-new-buffer name))
+          ;; Put this buffer in to diff mode
+          (funcall svn-commit-diff-mode)
+          ;; Make the buffer read-only
+          (setq buffer-read-only t)
+          ;; Define 'q' to destroy the window and return to the message
+          (let ((ro-map (assq 'buffer-read-only minor-mode-overriding-map-alist)))
+            (when ro-map
+              (define-key (cdr ro-map) "q" 'delete-window)))
+          ;; Retrieve the diff, asynchronously
+          (let ((proc (apply #'start-process name (current-buffer)
+                             "svn" "diff" (append svn-commit-diff-args
+                                                  (list path)))))
+            ;; Filter the process in the normal way, but don't move
+            ;; point
+            (set-process-filter proc
+                                (lambda (p s)
+                                  (with-current-buffer (process-buffer p)
+                                    (save-excursion
+                                      (goto-char (process-mark p))
+                                      (let ((inhibit-read-only t))
+                                        (insert s))
+                                      (set-marker (process-mark p) (point))))))
+            ;; Put the process status in the echo area instead of the
+            ;; buffer
+            (set-process-sentinel proc
+                                  (lambda (p e)
+                                    (message "svn diff %s" e)))))))))
+
+(put 'svn-commit-mode 'flyspell-mode-predicate 'svn-commit-flyspell-verify)
+(defun svn-commit-flyspell-verify ()
+  "Function used for `flyspell-generic-check-word-predicate' in
+svn-commit-mode.  Causes flyspell to ignore everything in the
+info block."
+  (save-excursion
+    (save-match-data
+      (re-search-forward svn-commit-info-regexp nil t))))
 
 (provide 'svn-commit-mode)
