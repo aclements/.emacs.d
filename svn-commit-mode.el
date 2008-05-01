@@ -78,6 +78,10 @@
 (defgroup svn-commit-mode nil
   "Major mode for editing Subversion commit messages.")
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Faces
+;;
+
 (defconst svn-commit-file-face 'svn-commit-file-face)
 (defface svn-commit-file-face
   '((((class color) (background dark))
@@ -140,6 +144,63 @@ for a given status line."
   "Face used for the ignored line in the commit message."
   :group 'svn-commit-mode)
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Customizable variables
+;;
+
+(defcustom svn-commit-mode-hook nil
+  "Normal hook run when entering svn commit mode."
+  :type 'hook
+  :group 'svn-commit-mode)
+
+(defcustom svn-commit-offer-to-restore t
+  "Offer to restore the contents of failed commit messages.
+
+When a commit message is loaded, check if an old commit message was
+left over by a earlier failed commit and offer to restore its contents
+into this commit message."
+  :type 'boolean
+  :group 'svn-commit-mode)
+
+(defcustom svn-commit-show-old-message t
+  "Display the old commit message when offering to restore it.
+
+While offering to restore an old commit message, split the window
+and display the old commit message."
+  :type 'boolean
+  :group 'svn-commit-mode)
+
+(defcustom svn-commit-delete-old-message t
+  "Delete the old commit message on save.
+
+If an old commit message was restored, offer to delete the old
+commit message file when this commit message is saved.  If 'auto,
+then don't bother prompting."
+  :type '(choice
+          (const :tag "Don't delete" nil)
+          (const :tag "Offer to delete" t)
+          (const :tag "Automatically delete" auto))
+  :group 'svn-commit-mode)
+
+(defcustom svn-commit-diff-args ()
+  "Additional arguments to pass to svn diff."
+  :type '(repeat string)
+  :group 'svn-commit-mode)
+
+(defcustom svn-commit-diff-mode 'diff-mode
+  "Major mode to use when viewing the results of svn diff."
+  :type 'function
+  :group 'svn-commit-mode)
+
+(defcustom svn-commit-diff-height 3
+  "Height of the commit message window when viewing a diff."
+  :type 'integer
+  :group 'svn-commit-mode)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Status lines and font lock
+;;
+
 (defconst svn-commit-info-regexp
   "^--This line, and those below, will be ignored--\n"
   "The regexp to match at the beginning of the svn commit message's
@@ -194,56 +255,86 @@ commit message information block.  It must contain two groups.
 The first must match the status character and the second must
 match the path.")
 
-;; Customizable variables
-(defcustom svn-commit-mode-hook nil
-  "Normal hook run when entering svn commit mode."
-  :type 'hook
-  :group 'svn-commit-mode)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Misc
+;;
 
-(defcustom svn-commit-offer-to-restore t
-  "Offer to restore the contents of failed commit messages.
+(defmacro svn-commit-without-modifying (&rest body)
+  "Evaluate BODY without changing the buffer's modified status or
+its undo list."
+  (let ((modified-var (gensym "modified")))
+    `(let ((buffer-undo-list t)
+           (,modified-var (buffer-modified-p)))
+       (unwind-protect
+           (progn ,@body)
+         (set-buffer-modified-p ,modified-var)))))
 
-When a commit message is loaded, check if an old commit message was
-left over by a earlier failed commit and offer to restore its contents
-into this commit message."
-  :type 'boolean
-  :group 'svn-commit-mode)
+(defun svn-commit-immutate (regexp)
+  "Search for regexp from the beginning of the buffer and make
+everything from the point one before the beginning of the regexp
+to the end of the buffer read-only."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward regexp nil t)
+      ;; Changing text properties updates the undo list and modifies
+      ;; the buffer; inhibit this
+      (svn-commit-without-modifying
+        (let ((inhibit-read-only t))
+          ;; Make the ignore block immutable.  We also grab the
+          ;; newline before the ignore block to make it impossible to
+          ;; insert text at the beginning of the ignore line.  We
+          ;; could use a front-sticky property, but then users could
+          ;; delete the initial blank line and wind up with a
+          ;; completely read-only buffer.
+          (add-text-properties (- (match-beginning 0) 1) (point-max)
+                               '(read-only t)))))))
 
-(defcustom svn-commit-show-old-message t
-  "Display the old commit message when offering to restore it.
+(defun svn-cleanup-whitespace ()
+  "Remove any extra whitespace between the user text and the ignore
+block."
+  (save-excursion
+    (goto-char (point-min))
+    ;; Nuke all of the whitespace leading up to the ignore block
+    (when (re-search-forward svn-commit-info-regexp nil t)
+      (goto-char (match-beginning 0))
+      ;; Leave the ignore line at the beginning of the line
+      (if (not (bobp))
+          (forward-char -1))
+      ;; Scan over extraneous whitespace and delete it
+      (let ((end (point)))
+        (skip-chars-backward " \n\t")
+        ;; Allow trailing whitespace (not doing this is annoying with,
+        ;; for example, templates that have unfilled-in labels at the
+        ;; bottom)
+        (end-of-line)
+        (delete-region (point) end))))
+  ;; Report that this hook did not save the buffer
+  nil)
 
-While offering to restore an old commit message, split the window
-and display the old commit message."
-  :type 'boolean
-  :group 'svn-commit-mode)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Commit message restoration
+;;
 
-(defcustom svn-commit-delete-old-message t
-  "Delete the old commit message on save.
-
-If an old commit message was restored, offer to delete the old
-commit message file when this commit message is saved.  If 'auto,
-then don't bother prompting."
-  :type '(choice
-          (const :tag "Don't delete" nil)
-          (const :tag "Offer to delete" t)
-          (const :tag "Automatically delete" auto))
-  :group 'svn-commit-mode)
-
-(defcustom svn-commit-diff-args ()
-  "Additional arguments to pass to svn diff."
-  :type '(repeat string)
-  :group 'svn-commit-mode)
-
-(defcustom svn-commit-diff-mode 'diff-mode
-  "Major mode to use when viewing the results of svn diff."
-  :type 'function
-  :group 'svn-commit-mode)
-
-(defcustom svn-commit-diff-height 3
-  "Height of the commit message window when viewing a diff."
-  :type 'integer
-  :group 'svn-commit-mode)
-
+(defun svn-find-old-commit-message ()
+  "Search for an old commit message that was left over by a failed
+previous commit.  Returns the file name of the old commit message if
+found, or nil otherwise."
+  (let ((n 0)
+        old-message)
+    ;; Iterate from 0 to 9 as long as we haven't found an old message
+    (while (and (not old-message) (< n 10))
+      ;; Compose the old message name.  Message 0 has no number.
+      (let ((filename (format "svn-commit%s.tmp"
+                              (if (= n 0) "" (format ".%d" n)))))
+        ;; Is it there and not the one that's open?
+        (if (and (file-readable-p filename)
+                 (not (eq (get-file-buffer filename)
+                          (current-buffer))))
+            ;; Found it
+            (setq old-message filename)
+          ;; Try the next number
+          (setq n (+ n 1)))))
+    old-message))
 
 (defvar svn-commit-restored-filename nil
   "If this commit message was restored from an old commit message,
@@ -252,6 +343,136 @@ from.  This is used to delete the old message when this message
 is saved.  nil if there was no restoration (or if the old message
 has been deleted).")
 (make-variable-buffer-local 'svn-commit-mode)
+
+(defun svn-load-old-commit-message (filename)
+  "Load the contents of an old commit message into this commit
+message.  When called interactively, looks for old commit
+messages and, if found, prompts the user to restore the old
+message.  The user is also prompted for whether or not they want
+to delete the old message.  If so, then the name of the old
+message is remembered so it can be deleted later by the save hook
+`svn-delete-old-commit-message'."
+  ;; If there is an old commit message, prompt to restore it
+  (interactive
+   (let ((old (svn-find-old-commit-message)))
+     (if (and old
+              (progn
+                (save-window-excursion
+                  ;; Show the old message in a split window
+                  (if svn-commit-show-old-message
+                      ;; Make sure we don't get into a restore loop
+                      ;; when the other window goes into
+                      ;; svn-commit-mode
+                      (let ((svn-commit-offer-to-restore nil))
+                        (find-file-other-window old)))
+                  ;; Restore?
+                  (y-or-n-p
+                   (format "Old commit message found in %s.  Restore? "
+                           old)))))
+         ;; If so, pass the old file name
+         (list old)
+       ;; If not, or there is no old file, pass nil
+       (list nil))))
+  (when filename
+    (let* ((buf (find-file-noselect filename))
+           (contents
+            (with-current-buffer buf
+              (goto-char (point-min))
+              (buffer-substring
+               (point)
+               (progn
+                 (goto-char
+                  (if (re-search-forward svn-commit-info-regexp nil t)
+                      (match-beginning 0)
+                    (point-max)))
+                 (skip-chars-backward " \n\t")
+                 (point))))))
+      (insert contents)
+      (when (and svn-commit-delete-old-message
+                 (or (eq svn-commit-delete-old-message 'auto)
+                     (y-or-n-p
+                      (format "Delete old commit message %s on save? "
+                              filename))))
+        (setq svn-commit-restored-filename filename)
+        (add-hook 'after-save-hook
+                  (function svn-delete-old-commit-message))))))
+
+(defun svn-delete-old-commit-message ()
+  "If this buffer was restored from an old commit message by
+`svn-load-old-commit-message', then delete the old commit
+message."
+  (interactive)
+  ;; Are we in a commit mode buffer that was restored from an old
+  ;; message?
+  (when (and (eq major-mode 'svn-commit-mode)
+             svn-commit-restored-filename)
+    ;; Delete it
+    (delete-file svn-commit-restored-filename)
+    (setq svn-commit-restored-filename nil)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Visiting diffs
+;;
+
+(defun svn-commit-mouse-visit-diff (event)
+  "Call `svn-commit-visit-diff' on the file selected by the mouse."
+  (interactive "e")
+  (let ((posn (event-start event)))
+    (select-window (posn-window posn) t)
+    (svn-commit-visit-diff (posn-point posn))))
+
+(defun svn-commit-visit-diff (pos)
+  "Visit the SVN diff of the file selected at point.  If taking
+the diff of the selected file doesn't make sense (for example,
+the file was just added), then simply visit the file."
+  (interactive "d")
+  (when (save-excursion
+          (beginning-of-line)
+          (looking-at svn-commit-stat-line-regexp))
+    (let* ((type (aref (match-string 1) 0))
+           (path (match-string 2))
+           (name (concat "diff " path)))
+      ;; Split the message window and create a buffer for the diff
+      (delete-other-windows)
+      (select-window (split-window nil (max svn-commit-diff-height
+                                            window-min-height)))
+      (if (memq type '(?A ?C ?I ?X ?? ?~))
+          ;; Simply visit the file.
+          (find-file path)
+        (switch-to-buffer (concat "*" name "*"))
+        (setq buffer-read-only nil)
+        (erase-buffer)
+        ;; Put this buffer in to diff mode
+        (funcall svn-commit-diff-mode)
+        ;; Make the buffer read-only
+        (setq buffer-read-only t)
+        ;; Define 'q' to destroy the window and return to the message
+        (let ((ro-map (assq 'buffer-read-only minor-mode-overriding-map-alist)))
+          (when ro-map
+            (define-key (cdr ro-map) "q" 'delete-window)))
+        ;; Retrieve the diff, asynchronously
+        (let ((proc (apply #'start-process name (current-buffer)
+                           "svn" "diff" (append svn-commit-diff-args
+                                                (list path)))))
+          ;; Filter the process in the normal way, but don't move
+          ;; point
+          (set-process-filter proc
+                              (lambda (p s)
+                                (with-current-buffer (process-buffer p)
+                                  (save-excursion
+                                    (goto-char (process-mark p))
+                                    (let ((inhibit-read-only t))
+                                      (insert s))
+                                    (set-marker (process-mark p) (point))))))
+          ;; Put the process status in the echo area instead of the
+          ;; buffer
+          (set-process-sentinel proc
+                                (lambda (p e)
+                                  (message "svn diff %s" e))))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Major mode
+;;
 
 (define-derived-mode svn-commit-mode text-mode "SVN-Commit"
   "Major mode for editing svn commit log messages"
@@ -342,201 +563,6 @@ has been deleted).")
                                (call-interactively
                                 (function
                                  svn-load-old-commit-message)))))))
-
-(defmacro svn-commit-without-modifying (&rest body)
-  "Evaluate BODY without changing the buffer's modified status or
-its undo list."
-  (let ((modified-var (gensym "modified")))
-    `(let ((buffer-undo-list t)
-           (,modified-var (buffer-modified-p)))
-       (unwind-protect
-           (progn ,@body)
-         (set-buffer-modified-p ,modified-var)))))
-
-(defun svn-commit-immutate (regexp)
-  "Search for regexp from the beginning of the buffer and make
-everything from the point one before the beginning of the regexp
-to the end of the buffer read-only."
-  (save-excursion
-    (goto-char (point-min))
-    (when (re-search-forward regexp nil t)
-      ;; Changing text properties updates the undo list and modifies
-      ;; the buffer; inhibit this
-      (svn-commit-without-modifying
-        (let ((inhibit-read-only t))
-          ;; Make the ignore block immutable.  We also grab the
-          ;; newline before the ignore block to make it impossible to
-          ;; insert text at the beginning of the ignore line.  We
-          ;; could use a front-sticky property, but then users could
-          ;; delete the initial blank line and wind up with a
-          ;; completely read-only buffer.
-          (add-text-properties (- (match-beginning 0) 1) (point-max)
-                               '(read-only t)))))))
-
-(defun svn-cleanup-whitespace ()
-  "Remove any extra whitespace between the user text and the ignore
-block."
-  (save-excursion
-    (goto-char (point-min))
-    ;; Nuke all of the whitespace leading up to the ignore block
-    (when (re-search-forward svn-commit-info-regexp nil t)
-      (goto-char (match-beginning 0))
-      ;; Leave the ignore line at the beginning of the line
-      (if (not (bobp))
-          (forward-char -1))
-      ;; Scan over extraneous whitespace and delete it
-      (let ((end (point)))
-        (skip-chars-backward " \n\t")
-        ;; Allow trailing whitespace (not doing this is annoying with,
-        ;; for example, templates that have unfilled-in labels at the
-        ;; bottom)
-        (end-of-line)
-        (delete-region (point) end))))
-  ;; Report that this hook did not save the buffer
-  nil)
-
-(defun svn-find-old-commit-message ()
-  "Search for an old commit message that was left over by a failed
-previous commit.  Returns the file name of the old commit message if
-found, or nil otherwise."
-  (let ((n 0)
-        old-message)
-    ;; Iterate from 0 to 9 as long as we haven't found an old message
-    (while (and (not old-message) (< n 10))
-      ;; Compose the old message name.  Message 0 has no number.
-      (let ((filename (format "svn-commit%s.tmp"
-                              (if (= n 0) "" (format ".%d" n)))))
-        ;; Is it there and not the one that's open?
-        (if (and (file-readable-p filename)
-                 (not (eq (get-file-buffer filename)
-                          (current-buffer))))
-            ;; Found it
-            (setq old-message filename)
-          ;; Try the next number
-          (setq n (+ n 1)))))
-    old-message))
-
-(defun svn-load-old-commit-message (filename)
-  "Load the contents of an old commit message into this commit
-message.  When called interactively, looks for old commit
-messages and, if found, prompts the user to restore the old
-message.  The user is also prompted for whether or not they want
-to delete the old message.  If so, then the name of the old
-message is remembered so it can be deleted later by the save hook
-`svn-delete-old-commit-message'."
-  ;; If there is an old commit message, prompt to restore it
-  (interactive
-   (let ((old (svn-find-old-commit-message)))
-     (if (and old
-              (progn
-                (save-window-excursion
-                  ;; Show the old message in a split window
-                  (if svn-commit-show-old-message
-                      ;; Make sure we don't get into a restore loop
-                      ;; when the other window goes into
-                      ;; svn-commit-mode
-                      (let ((svn-commit-offer-to-restore nil))
-                        (find-file-other-window old)))
-                  ;; Restore?
-                  (y-or-n-p
-                   (format "Old commit message found in %s.  Restore? "
-                           old)))))
-         ;; If so, pass the old file name
-         (list old)
-       ;; If not, or there is no old file, pass nil
-       (list nil))))
-  (when filename
-    (let* ((buf (find-file-noselect filename))
-           (contents
-            (with-current-buffer buf
-              (goto-char (point-min))
-              (buffer-substring
-               (point)
-               (progn
-                 (goto-char
-                  (if (re-search-forward svn-commit-info-regexp nil t)
-                      (match-beginning 0)
-                    (point-max)))
-                 (skip-chars-backward " \n\t")
-                 (point))))))
-      (insert contents)
-      (when (and svn-commit-delete-old-message
-                 (or (eq svn-commit-delete-old-message 'auto)
-                     (y-or-n-p
-                      (format "Delete old commit message %s on save? "
-                              filename))))
-        (setq svn-commit-restored-filename filename)
-        (add-hook 'after-save-hook
-                  (function svn-delete-old-commit-message))))))
-
-(defun svn-delete-old-commit-message ()
-  "If this buffer was restored from an old commit message by
-`svn-load-old-commit-message', then delete the old commit
-message."
-  (interactive)
-  ;; Are we in a commit mode buffer that was restored from an old
-  ;; message?
-  (when (and (eq major-mode 'svn-commit-mode)
-             svn-commit-restored-filename)
-    ;; Delete it
-    (delete-file svn-commit-restored-filename)
-    (setq svn-commit-restored-filename nil)))
-
-(defun svn-commit-mouse-visit-diff (event)
-  "Call `svn-commit-visit-diff' on the file selected by the mouse."
-  (interactive "e")
-  (let ((posn (event-start event)))
-    (select-window (posn-window posn) t)
-    (svn-commit-visit-diff (posn-point posn))))
-
-(defun svn-commit-visit-diff (pos)
-  "Visit the SVN diff of the file selected at point.  If taking
-the diff of the selected file doesn't make sense (for example,
-the file was just added), then simply visit the file."
-  (interactive "d")
-  (when (save-excursion
-          (beginning-of-line)
-          (looking-at svn-commit-stat-line-regexp))
-    (let* ((type (aref (match-string 1) 0))
-           (path (match-string 2))
-           (name (concat "diff " path)))
-      ;; Split the message window and create a buffer for the diff
-      (delete-other-windows)
-      (select-window (split-window nil (max svn-commit-diff-height
-                                            window-min-height)))
-      (if (memq type '(?A ?C ?I ?X ?? ?~))
-          ;; Simply visit the file.
-          (find-file path)
-        (switch-to-buffer (concat "*" name "*"))
-        (setq buffer-read-only nil)
-        (erase-buffer)
-        ;; Put this buffer in to diff mode
-        (funcall svn-commit-diff-mode)
-        ;; Make the buffer read-only
-        (setq buffer-read-only t)
-        ;; Define 'q' to destroy the window and return to the message
-        (let ((ro-map (assq 'buffer-read-only minor-mode-overriding-map-alist)))
-          (when ro-map
-            (define-key (cdr ro-map) "q" 'delete-window)))
-        ;; Retrieve the diff, asynchronously
-        (let ((proc (apply #'start-process name (current-buffer)
-                           "svn" "diff" (append svn-commit-diff-args
-                                                (list path)))))
-          ;; Filter the process in the normal way, but don't move
-          ;; point
-          (set-process-filter proc
-                              (lambda (p s)
-                                (with-current-buffer (process-buffer p)
-                                  (save-excursion
-                                    (goto-char (process-mark p))
-                                    (let ((inhibit-read-only t))
-                                      (insert s))
-                                    (set-marker (process-mark p) (point))))))
-          ;; Put the process status in the echo area instead of the
-          ;; buffer
-          (set-process-sentinel proc
-                                (lambda (p e)
-                                  (message "svn diff %s" e))))))))
 
 ;; Disable flyspell in the information block
 (put 'svn-commit-mode 'flyspell-mode-predicate 'svn-commit-flyspell-verify)
