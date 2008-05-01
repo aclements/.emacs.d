@@ -101,6 +101,7 @@ unnecessary whitespace."
   ;; Save buffer positions between sessions
   (when (require 'saveplace nil t)
     (setq-default save-place t)
+    (setq save-place-limit 25)
     (if (= (user-uid) 0)
         ;; Being root screws with permissions of saveplace's files, so
         ;; put it somewhere else
