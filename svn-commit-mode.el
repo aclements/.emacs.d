@@ -53,19 +53,8 @@
 ;;                      'svn-commit-mode)
 
 ;; To do
-;; * Make the status lines interactive.  This would only be possible
-;;   if Emacs were driving subversion.  Have an 'svnci' script that
-;;   invokes Emacs and puts it in svnci-mode, then invokes svn
-;;   appropriately when Emacs exits.  This script should mimic the
-;;   behavior of svn (defaulting to all changes if no arguments are
-;;   supplied, etc).  Have up to three sections in the commit message:
-;;   "The following files will be committed", "The following files
-;;   will be added and committed", and "The following files will not
-;;   be committed".  It could allow free-form editing of these, but
-;;   considering how structured they are, it's probably better not to
-;;   (this would also allow these sections to be hidden when empty).
-;; ** k: don't commit file, a: commit/add file
-;; * Recenter the message buffer when exiting a diff
+;; * Recenter the message buffer and kill the diff buffer when exiting
+;;   a diff
 ;; * Make whitespace trimming a customizable option
 ;; * If svnci is going to be used from within a long-running emacs,
 ;;   this needs to clean up its buffer better and play more nicely
@@ -451,7 +440,7 @@ the file was just added), then simply visit the file."
         ;; Define 'q' to destroy the window and return to the message
         (let ((ro-map (assq 'buffer-read-only minor-mode-overriding-map-alist)))
           (when ro-map
-            (define-key (cdr ro-map) "q" 'delete-window)))
+            (define-key (cdr ro-map) "q" #'svn-commit-quit-diff)))
         ;; Retrieve the diff, asynchronously
         (let ((proc (apply #'start-process name (current-buffer)
                            "svn" "diff" (append svn-commit-diff-args
@@ -471,6 +460,18 @@ the file was just added), then simply visit the file."
           (set-process-sentinel proc
                                 (lambda (p e)
                                   (message "svn diff %s" e))))))))
+
+(defun svn-commit-quit-diff ()
+  "Quit the currently visited diff.
+
+Deletes the current window, kills its buffer, and recenters the
+message buffer."
+  (interactive)
+
+  (let ((buf (current-buffer)))
+    (delete-window)
+    (kill-buffer buf)
+    (recenter)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Major mode
