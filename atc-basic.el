@@ -44,7 +44,7 @@ present, and this doesn't hurt."
   (setq truncate-partial-width-windows nil
         column-number-mode             t
         frame-title-format             '("%b" " - " invocation-name))
-  (unless emacs22
+  (unless emacs22                       ; Enabled by default
     (global-font-lock-mode t)))
 
 (defun atc:setup-mode-line ()
@@ -138,7 +138,9 @@ unnecessary whitespace."
     (auto-compression-mode 1))
 
   ;; Outed mode
-  (require 'outed-mode nil t)
+  (when (locate-library "outed-mode")
+    (autoload 'outed-mode "outed-mode"
+      "Outed major mode for editing outlines." t))
 
   ;; Misc usability variables
   (setq load-warn-when-source-newer t
@@ -179,21 +181,20 @@ unnecessary whitespace."
 (defun atc:disable-ange-ftp ()
   "Disables Ange FTP filename completion.  Having this enabled can
 really slow things down."
-  (let ((fnha file-name-handler-alist))
-    (while fnha
-      (if (string-match "^ange-.*" (symbol-name (cdar fnha)))
-          (setq file-name-handler-alist
-                (delq (car fnha) file-name-handler-alist)))
-      (setq fnha (cdr fnha)))))
+  ;; Emacs 22 doesn't have Ange FTP in the file name handler list
+  (unless emacs22
+    (let ((fnha file-name-handler-alist))
+      (while fnha
+        (if (string-match "^ange-.*" (symbol-name (cdar fnha)))
+            (setq file-name-handler-alist
+                  (delq (car fnha) file-name-handler-alist)))
+        (setq fnha (cdr fnha))))))
 
 (defun atc:setup-global-bindings ()
   "Sets useful global bindings."
-  (unless emacs22
-    (global-set-key "\M-g\g"   (function goto-line))
+  (unless emacs22                       ; Default
     (global-set-key "\M-g\M-g" (function goto-line)))
-  (global-set-key "\C-x\C-k" (function kill-buffer))
   (if (require 'magic-buffer-list nil t)
-      ;; XXX Use autoload voodoo instead
       (progn
         (global-set-key "\C-x\C-b" (function magic-buffer-list))
         (global-set-key "\C-xB" (function magic-buffer-list-other-window))
@@ -271,14 +272,17 @@ well with `atc:setup-server'."
 
 (defun atc:post-mode-jump-cursor ()
   "Automatically jump the cursor to the Right Place in post-mode"
-  (if (re-search-backward "^To:\\s *$" nil t)
-      (progn
-        (goto-line 2)
-        (end-of-line))))
+  (save-match-data
+    (when (re-search-backward "^To:\\s\\( *\\)$" nil t)
+      (goto-point (match-beginning 1)))))
 (defun atc:setup-post-mode ()
-  ;; XXX Can I autoload this instead?
-  (when (require 'post nil t)
-    (add-hook 'post-mode-hook (function atc:post-mode-jump-cursor))))
+  (autoload 'post-mode "post"
+    "Major mode for composing email or news with an external agent." t)
+  (add-to-list 'auto-mode-alist
+               (cons "\\(mutt\\(ng\\)?-[a-zA-Z0-9-.]+-[0-9]+-[0-9]+\\|mutt\\(ng\\)?[a-zA-Z0-9._-]\\{6\\}\\)\\'"
+                     #'post-mode)
+               t)
+  (add-hook 'post-mode-hook (function atc:post-mode-jump-cursor)))
 
 ;;; Org mode
 
@@ -330,5 +334,4 @@ is minibuffer."
   (atc:setup-global-bindings)
   (atc:setup-server)
   (atc:setup-kill-dwim)
-  (atc:setup-post-mode)
-  (atc:load-org-mode))
+  (atc:setup-post-mode))
