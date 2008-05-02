@@ -274,7 +274,7 @@ well with `atc:setup-server'."
   "Automatically jump the cursor to the Right Place in post-mode"
   (save-match-data
     (when (re-search-backward "^To:\\(\\s *\\)$" nil t)
-      (goto-point (match-end 1)))))
+      (goto-char (match-end 1)))))
 (defun atc:setup-post-mode ()
   (autoload 'post-mode "post"
     "Major mode for composing email or news with an external agent." t)
