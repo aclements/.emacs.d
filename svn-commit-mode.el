@@ -315,26 +315,27 @@ block."
 ;; Commit message restoration
 ;;
 
-(defun svn-find-old-commit-message ()
+(defun svn-find-old-commit-message (&optional name-base)
   "Search for an old commit message that was left over by a failed
-previous commit.  Returns the file name of the old commit message if
-found, or nil otherwise."
+previous commit.  Returns the file name of the old commit message
+if found, or nil otherwise.  name-base should specify the base of
+the file name to search for and exists to make this function
+useful to related modes.  It defaults to \"svn-commit\"."
+  (unless name-base
+    (setq name-base "svn-commit"))
   (let ((n 0)
         old-message)
-    ;; Iterate from 0 to 9 as long as we haven't found an old message
-    (while (and (not old-message) (< n 10))
+    ;; Iterate from 0 to 9
+    (dotimes (n 10 old-message)
       ;; Compose the old message name.  Message 0 has no number.
-      (let ((filename (format "svn-commit%s.tmp"
+      (let ((filename (format "%s%s.tmp" name-base
                               (if (= n 0) "" (format ".%d" n)))))
         ;; Is it there and not the one that's open?
         (if (and (file-readable-p filename)
                  (not (eq (get-file-buffer filename)
                           (current-buffer))))
-            ;; Found it
-            (setq old-message filename)
-          ;; Try the next number
-          (setq n (+ n 1)))))
-    old-message))
+            ;; Found one
+            (setq old-message filename))))))
 
 (defvar svn-commit-restored-filename nil
   "If this commit message was restored from an old commit message,
@@ -373,6 +374,7 @@ message is remembered so it can be deleted later by the save hook
          (list old)
        ;; If not, or there is no old file, pass nil
        (list nil))))
+
   (when filename
     (let* ((buf (find-file-noselect filename))
            (contents
@@ -538,7 +540,7 @@ the file was just added), then simply visit the file."
   ;; Display help echo based on point motion
   (set (make-local-variable 'svn-commit-help-last-point) (point))
   (set (make-local-variable 'svn-commit-help-last-msg) nil)
-  (run-with-idle-timer 1 t
+  (run-with-idle-timer 0.1 t
     (lambda ()
       (when (and (boundp 'svn-commit-help-last-msg)
                  (boundp 'svn-commit-help-last-point)
