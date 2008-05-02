@@ -33,12 +33,12 @@
 ;; features provided by `svn-commit-mode' such as diff integration and
 ;; font locking.
 
-;; The `svnci' command starts the commit process and initially
-;; includes the same set of files that an 'svn commit' command would.
-;; `svnci-this' also starts the commit process, but initially includes
-;; only the file in the current buffer.  Either way, the user is free
-;; to edit the list of included or excluded files before committing.
-;; See the documentation for these two commands for more information.
+;; M-x svnci starts the commit process and initially includes the same
+;; set of files that an 'svn commit' command would.  M-x svnci-this
+;; also starts the commit process, but initially includes only the
+;; file in the current buffer.  Either way, the user is free to edit
+;; the list of included or excluded files before committing.  See the
+;; documentation for these two commands for more information.
 
 ;; With 'svn commit', svn drives the commit process and calls on an
 ;; editor simply to retrieve the log message.  svnci works the
