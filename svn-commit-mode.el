@@ -24,37 +24,13 @@
 
 ;;; Commentary:
 
-;; This major mode provides support for editing Subversion commit
-;; messages.  It enhances editing by customizing paragraph filling,
-;; automatically cleaning up whitespace, and providing font locking.
-;; To improve log message quality, file status lines are automatically
-;; hyperlinked to provide easy access to diff's that show the changes
-;; being checked in.  Finally, the major mode understands Subversion's
-;; behavior when commits fail, offering to restore the failed commit
-;; message and clean up the stale file.
-
-;; Features
-;; * Modifies paragraph filling to not wrap the file status block
-;;   Subversion appends to commit messages
-;; * Automatically removes extraneous trailing whitespace when saving
-;;   so that logs don't contain extra vertical space
-;; * Gratuitous color
-;; * Previews and offers to restore and delete old commit messages
-;;   left by failed commits
-;; * File status lines are hyperlinked to provide easy access to
-;;   diff's between the working copy and the base revision
-;; * Disables backup files and the saveplace package when editing
-;;   commit messages and inhibits flyspell in the file status block
-
 ;; To install this mode, add the following lines to your .emacs file:
 ;;   (autoload 'svn-commit-mode "svn-commit-mode" nil t)
 ;;   (add-to-list 'auto-mode-alist
 ;;                (cons "svn-commit\\(\\.[0-9]+\\)?\\.tmp"
-;;                      'svn-commit-mode)
+;;                      'svn-commit-mode))
 
 ;; To do
-;; * Recenter the message buffer and kill the diff buffer when exiting
-;;   a diff
 ;; * Make whitespace trimming a customizable option
 ;; * If svnci is going to be used from within a long-running emacs,
 ;;   this needs to clean up its buffer better and play more nicely
@@ -478,7 +454,29 @@ message buffer."
 ;;
 
 (define-derived-mode svn-commit-mode text-mode "SVN-Commit"
-  "Major mode for editing svn commit log messages"
+  "Major mode for editing svn commit log messages.
+
+This major mode provides support for editing Subversion commit
+messages.  It enhances interface integration by hyperlinking file
+status lines to diff's that show the changes being checked in.
+It enhances editing by customizing paragraph filling,
+automatically cleaning up whitespace, and providing font locking.
+Finally, it understands Subversion's behavior when commits fail,
+offering to restore the failed commit message and clean up the
+stale file.
+
+Features
+* Modifies paragraph filling to not wrap the information block
+  Subversion appends to commit messages
+* Automatically removes extraneous trailing whitespace when
+  saving so that logs don't contain extra vertical space
+* Gratuitous color
+* Previews and offers to restore and delete old commit messages
+  left by failed commits
+* File status lines are hyperlinked to provide easy access to
+  diff's between the working copy and the base revision
+* Disables backup files and the saveplace package when editing
+  commit messages and inhibits flyspell in the file status block"
 
   ;; Update the font lock keywords with the status faces and the
   ;; necessary text properties to make hyperlinks work
