@@ -455,6 +455,7 @@ message buffer."
 ;; Major mode
 ;;
 
+;;;###autoload
 (define-derived-mode svn-msg-mode text-mode "svn message"
   "Major mode for editing svn commit log messages.
 
@@ -566,6 +567,11 @@ Features
                                (call-interactively
                                 (function
                                  svn-load-old-commit-message)))))))
+
+;;;###autoload
+(add-to-list 'auto-mode-alist
+             (cons "svn-commit\\(\\.[0-9]+\\)?\\.tmp"
+                   #'svn-msg-mode))
 
 ;; Disable flyspell in the information block
 (put 'svn-msg-mode 'flyspell-mode-predicate 'svn-msg-flyspell-verify)
