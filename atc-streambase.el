@@ -31,7 +31,7 @@
    jde-complete-insert-method-signature nil)
 
   ;; Use template for svn commit
-  (add-hook 'svn-commit-mode-hook
+  (add-hook 'svn-msg-mode-hook
             (lambda ()
               (unless svn-commit-restored-filename
                 (save-excursion

@@ -109,8 +109,7 @@
                        '(autofill flyspell-full))
 (atc:add-mode-features 'text-mode-hook
                        '(plain-newline filladapt))
-(atc:autoload-mode 'svn-commit-mode "svn-commit-mode"
-                   "svn-commit\\(\\.[0-9]+\\)?\\.tmp")
+(require 'svn-msg nil t)
 
 ;; Latex (AUCTeX)
 (defmodefeature latex-bindings
@@ -140,7 +139,7 @@
                     (lambda () (if TeX-PDF-mode "--pdf" ""))))
      (add-to-list 'TeX-command-list
                   '("Rubber" "rubber %(rubberarg) -Wrefs -Wmisc %t"
-                    TeX-run-compile t t))
+                    TeX-run-compile nil (latex-mode)))
      (add-hook 'LaTeX-mode-hook
                (lambda ()
                  (setq TeX-command-default "Rubber")))))
