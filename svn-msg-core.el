@@ -1,4 +1,4 @@
-;;; svn-commit-mode.el --- subversion commit log major mode
+;;; svn-msg-core.el --- major mode for Subversion commit messages
 
 ;; Copyright (C) 2005-2008 Austin Clements
 
@@ -25,80 +25,82 @@
 ;;; Commentary:
 
 ;; To install this mode, add the following lines to your .emacs file:
-;;   (autoload 'svn-commit-mode "svn-commit-mode" nil t)
+;;   (autoload 'svn-msg-mode "svn-msg-core" nil t)
 ;;   (add-to-list 'auto-mode-alist
 ;;                (cons "svn-commit\\(\\.[0-9]+\\)?\\.tmp"
-;;                      'svn-commit-mode))
+;;                      'svn-msg-mode))
 
 ;; To do
 ;; * Make whitespace trimming a customizable option
 ;; * If svnci is going to be used from within a long-running emacs,
 ;;   this needs to clean up its buffer better and play more nicely
 ;;   with window layout
+;; * When a file is added with history ("A  +"), visit the diff
+;;   instead of the file
 
 ;;; Code:
 
 (eval-when-compile (require 'cl))
 
-(defgroup svn-commit-mode nil
+(defgroup svn-msg-mode nil
   "Major mode for editing Subversion commit messages.")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Faces
 ;;
 
-(defconst svn-commit-file-face 'svn-commit-file-face)
-(defface svn-commit-file-face
+(defconst svn-msg-file-face 'svn-msg-file-face)
+(defface svn-msg-file-face
   '((((class color) (background dark))
      (:weight bold))
     (t (:inherit default)))
   "Face used for files."
-  :group 'svn-commit-mode)
+  :group 'svn-msg-mode)
 
-(defconst svn-commit-added-face 'svn-commit-added-face)
-(defface svn-commit-added-face
+(defconst svn-msg-added-face 'svn-msg-added-face)
+(defface svn-msg-added-face
   '((((class color))
      (:foreground "green"))
-    (t (:inherit svn-commit-file-face)))
+    (t (:inherit svn-msg-file-face)))
   "Face used for added files."
-  :group 'svn-commit-mode)
+  :group 'svn-msg-mode)
 
-(defconst svn-commit-modified-face 'svn-commit-modified-face)
-(defface svn-commit-modified-face
+(defconst svn-msg-modified-face 'svn-msg-modified-face)
+(defface svn-msg-modified-face
   '((((class color))
      (:foreground "yellow"))
-    (t (:inherit svn-commit-file-face)))
+    (t (:inherit svn-msg-file-face)))
   "Face used for modified files."
-  :group 'svn-commit-mode)
+  :group 'svn-msg-mode)
 
-(defconst svn-commit-deleted-face 'svn-commit-deleted-face)
-(defface svn-commit-deleted-face
+(defconst svn-msg-deleted-face 'svn-msg-deleted-face)
+(defface svn-msg-deleted-face
   '((((class color))
      (:foreground "red"))
-    (t (:inherit svn-commit-file-face)))
+    (t (:inherit svn-msg-file-face)))
   "Face used for removed files."
-  :group 'svn-commit-mode)
+  :group 'svn-msg-mode)
 
-(defconst svn-commit-conflict-face 'svn-commit-conflict-face)
-(defface svn-commit-conflict-face
+(defconst svn-msg-conflict-face 'svn-msg-conflict-face)
+(defface svn-msg-conflict-face
   '((((class color))
      (:background "red"))
-    (t (:inherit svn-commit-file-face)))
+    (t (:inherit svn-msg-file-face)))
   "Face used for conflict files."
-  :group 'svn-commit-mode)
+  :group 'svn-msg-mode)
 
-(defconst svn-commit-path-face 'svn-commit-path-face)
-(defface svn-commit-path-face
+(defconst svn-msg-path-face 'svn-msg-path-face)
+(defface svn-msg-path-face
   '((((supports :underline t)) :underline t)
     (t (:foreground "lightblue")))
   "Face used to highlight paths in the commit message.
 
 This is layered on top of the added/modified/etc face appropriate
 for a given status line."
-  :group 'svn-commit-mode)
+  :group 'svn-msg-mode)
 
-(defconst svn-commit-info-face 'svn-commit-info-face)
-(defface svn-commit-info-face
+(defconst svn-msg-info-face 'svn-msg-info-face)
+(defface svn-msg-info-face
   '((((class color) (min-colors 9))
      (:inherit font-lock-comment-face))
     ;; font-lock-comment-face is completely unhelpful in low color
@@ -107,35 +109,35 @@ for a given status line."
      (:foreground "red"))
     (t (:inherit font-lock-comment-face)))
   "Face used for the ignored line in the commit message."
-  :group 'svn-commit-mode)
+  :group 'svn-msg-mode)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Customizable variables
 ;;
 
-(defcustom svn-commit-mode-hook nil
+(defcustom svn-msg-mode-hook nil
   "Normal hook run when entering svn commit mode."
   :type 'hook
-  :group 'svn-commit-mode)
+  :group 'svn-msg-mode)
 
-(defcustom svn-commit-offer-to-restore t
+(defcustom svn-msg-offer-to-restore t
   "Offer to restore the contents of failed commit messages.
 
 When a commit message is loaded, check if an old commit message was
 left over by a earlier failed commit and offer to restore its contents
 into this commit message."
   :type 'boolean
-  :group 'svn-commit-mode)
+  :group 'svn-msg-mode)
 
-(defcustom svn-commit-show-old-message t
+(defcustom svn-msg-show-old-message t
   "Display the old commit message when offering to restore it.
 
 While offering to restore an old commit message, split the window
 and display the old commit message."
   :type 'boolean
-  :group 'svn-commit-mode)
+  :group 'svn-msg-mode)
 
-(defcustom svn-commit-delete-old-message t
+(defcustom svn-msg-delete-old-message t
   "Delete the old commit message on save.
 
 If an old commit message was restored, offer to delete the old
@@ -145,76 +147,76 @@ then don't bother prompting."
           (const :tag "Don't delete" nil)
           (const :tag "Offer to delete" t)
           (const :tag "Automatically delete" auto))
-  :group 'svn-commit-mode)
+  :group 'svn-msg-mode)
 
-(defcustom svn-commit-diff-args ()
+(defcustom svn-msg-diff-args ()
   "Additional arguments to pass to svn diff."
   :type '(repeat string)
-  :group 'svn-commit-mode)
+  :group 'svn-msg-mode)
 
-(defcustom svn-commit-diff-mode 'diff-mode
+(defcustom svn-msg-diff-mode 'diff-mode
   "Major mode to use when viewing the results of svn diff."
   :type 'function
-  :group 'svn-commit-mode)
+  :group 'svn-msg-mode)
 
-(defcustom svn-commit-diff-height 3
+(defcustom svn-msg-diff-height 3
   "Height of the commit message window when viewing a diff."
   :type 'integer
-  :group 'svn-commit-mode)
+  :group 'svn-msg-mode)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Status lines and font lock
 ;;
 
-(defconst svn-commit-info-regexp
+(defconst svn-msg-info-regexp
   "^--This line, and those below, will be ignored--\n"
   "The regexp to match at the beginning of the svn commit message's
 ignore block.")
 
-(defvar svn-commit-stat-line-map
+(defvar svn-msg-stat-line-map
   (let ((map (make-sparse-keymap)))
-    (define-key map [mouse-2] #'svn-commit-mouse-visit-diff)
-    (define-key map "\r" #'svn-commit-visit-diff)
+    (define-key map [mouse-2] #'svn-msg-mouse-visit-diff)
+    (define-key map "\r" #'svn-msg-visit-diff)
     map)
   "Keymap applied to status lines in the commit message's ignore
 block.  By default, these bindings visit diffs when status lines
 are selected.")
 
-(defvar svn-commit-stat-line nil
+(defvar svn-msg-stat-line nil
   "A variable whose properties are used as the default properties
 of status lines in the commit message's ignore block.")
-(put 'svn-commit-stat-line 'mouse-face 'highlight)
-(put 'svn-commit-stat-line 'help-echo
+(put 'svn-msg-stat-line 'mouse-face 'highlight)
+(put 'svn-msg-stat-line 'help-echo
      (lambda (w o p)
-       (let ((f (get-char-property p 'svn-commit-msg o)))
+       (let ((f (get-char-property p 'svn-msg-msg o)))
          (and f (funcall f o p)))))
-(put 'svn-commit-stat-line 'follow-link t)
-(put 'svn-commit-stat-line 'pointer x-sensitive-text-pointer-shape)
+(put 'svn-msg-stat-line 'follow-link t)
+(put 'svn-msg-stat-line 'pointer x-sensitive-text-pointer-shape)
 
-(defvar svn-commit-status-faces
-  '(("\\(?:C[ CM]\\|[ ADIMRX?!~]C\\)" svn-commit-conflict-face)
-    ("[AR][ M]" svn-commit-added-face)
-    ("D[ M]" svn-commit-deleted-face)
-    ("\\(?:M[ M]\\| M\\)" svn-commit-modified-face)
-    ("[!~][ M]" svn-commit-conflict-face)
+(defvar svn-msg-status-faces
+  '(("\\(?:C[ CM]\\|[ ADIMRX?!~]C\\)" svn-msg-conflict-face)
+    ("[AR][ M]" svn-msg-added-face)
+    ("D[ M]" svn-msg-deleted-face)
+    ("\\(?:M[ M]\\| M\\)" svn-msg-modified-face)
+    ("[!~][ M]" svn-msg-conflict-face)
     ("[IX?][ M]" default))
   "An association list mapping regular expressions to faces.
 Each regular expression should match against the first two
 characters of a status line in the svn commit message (or,
 equivalently, the first two characters in the output of svn
 status) and must not contain any binding groups.  When
-`svn-commit-mode' is entered, it will compute and append keywords
-to a buffer-local copy of `svn-commit-font-lock-keywords' to
-reflect these faces.")
+`svn-msg-mode' is entered, it will compute and append keywords to
+a buffer-local copy of `svn-msg-font-lock-keywords' to reflect
+these faces.")
 
-(defvar svn-commit-font-lock-keywords
-  `((,svn-commit-info-regexp . svn-commit-info-face))
-  "Font lock keywords for `svn-commit-mode'.  Note that this will
-be made buffer-local and appended to when entering
-svn-commit-mode in order to enable hyperlinks and status line
-highlighting according to `svn-commit-status-faces'.")
+(defvar svn-msg-font-lock-keywords
+  `((,svn-msg-info-regexp . svn-msg-info-face))
+  "Font lock keywords for `svn-msg-mode'.  Note that this will
+be made buffer-local and appended to when entering svn-msg-mode
+in order to enable hyperlinks and status line highlighting
+according to `svn-msg-status-faces'.")
 
-(defvar svn-commit-stat-line-regexp "\\([ ACDIMRX?!~]\\)[ CM][ L][ +] \\(.*\\)"
+(defvar svn-msg-stat-line-regexp "\\([ ACDIMRX?!~]\\)[ CM][ L][ +] \\(.*\\)"
   "A regular expression that should match a status line in the
 commit message information block.  It must contain two groups.
 The first must match the status character and the second must
@@ -224,7 +226,7 @@ match the path.")
 ;; Misc
 ;;
 
-(defmacro svn-commit-without-modifying (&rest body)
+(defmacro svn-msg-without-modifying (&rest body)
   "Evaluate BODY without changing the buffer's modified status or
 its undo list."
   (let ((modified-var (gensym "modified")))
@@ -234,7 +236,7 @@ its undo list."
            (progn ,@body)
          (set-buffer-modified-p ,modified-var)))))
 
-(defun svn-commit-immutate (regexp)
+(defun svn-msg-immutate (regexp)
   "Search for regexp from the beginning of the buffer and make
 everything from the point one before the beginning of the regexp
 to the end of the buffer read-only."
@@ -243,7 +245,7 @@ to the end of the buffer read-only."
     (when (re-search-forward regexp nil t)
       ;; Changing text properties updates the undo list and modifies
       ;; the buffer; inhibit this
-      (svn-commit-without-modifying
+      (svn-msg-without-modifying
         (let ((inhibit-read-only t))
           ;; Make the ignore block immutable.  We also grab the
           ;; newline before the ignore block to make it impossible to
@@ -260,7 +262,7 @@ block."
   (save-excursion
     (goto-char (point-min))
     ;; Nuke all of the whitespace leading up to the ignore block
-    (when (re-search-forward svn-commit-info-regexp nil t)
+    (when (re-search-forward svn-msg-info-regexp nil t)
       (goto-char (match-beginning 0))
       ;; Leave the ignore line at the beginning of the line
       (if (not (bobp))
@@ -302,13 +304,13 @@ useful to related modes.  It defaults to \"svn-commit\"."
             ;; Found one
             (setq old-message filename))))))
 
-(defvar svn-commit-restored-filename nil
+(defvar svn-msg-restored-filename nil
   "If this commit message was restored from an old commit message,
 this contains the filename of the commit message it was restored
 from.  This is used to delete the old message when this message
 is saved.  nil if there was no restoration (or if the old message
 has been deleted).")
-(make-variable-buffer-local 'svn-commit-mode)
+(make-variable-buffer-local 'svn-msg-mode)
 
 (defun svn-load-old-commit-message (filename)
   "Load the contents of an old commit message into this commit
@@ -325,11 +327,11 @@ message is remembered so it can be deleted later by the save hook
               (progn
                 (save-window-excursion
                   ;; Show the old message in a split window
-                  (if svn-commit-show-old-message
+                  (if svn-msg-show-old-message
                       ;; Make sure we don't get into a restore loop
                       ;; when the other window goes into
-                      ;; svn-commit-mode
-                      (let ((svn-commit-offer-to-restore nil))
+                      ;; svn-msg-mode
+                      (let ((svn-msg-offer-to-restore nil))
                         (find-file-other-window old)))
                   ;; Restore?
                   (y-or-n-p
@@ -349,18 +351,18 @@ message is remembered so it can be deleted later by the save hook
                (point)
                (progn
                  (goto-char
-                  (if (re-search-forward svn-commit-info-regexp nil t)
+                  (if (re-search-forward svn-msg-info-regexp nil t)
                       (match-beginning 0)
                     (point-max)))
                  (skip-chars-backward " \n\t")
                  (point))))))
       (insert contents)
-      (when (and svn-commit-delete-old-message
-                 (or (eq svn-commit-delete-old-message 'auto)
+      (when (and svn-msg-delete-old-message
+                 (or (eq svn-msg-delete-old-message 'auto)
                      (y-or-n-p
                       (format "Delete old commit message %s on save? "
                               filename))))
-        (setq svn-commit-restored-filename filename)
+        (setq svn-msg-restored-filename filename)
         (add-hook 'after-save-hook
                   (function svn-delete-old-commit-message))))))
 
@@ -371,37 +373,37 @@ message."
   (interactive)
   ;; Are we in a commit mode buffer that was restored from an old
   ;; message?
-  (when (and (eq major-mode 'svn-commit-mode)
-             svn-commit-restored-filename)
+  (when (and (eq major-mode 'svn-msg-mode)
+             svn-msg-restored-filename)
     ;; Delete it
-    (delete-file svn-commit-restored-filename)
-    (setq svn-commit-restored-filename nil)))
+    (delete-file svn-msg-restored-filename)
+    (setq svn-msg-restored-filename nil)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Visiting diffs
 ;;
 
-(defun svn-commit-mouse-visit-diff (event)
-  "Call `svn-commit-visit-diff' on the file selected by the mouse."
+(defun svn-msg-mouse-visit-diff (event)
+  "Call `svn-msg-visit-diff' on the file selected by the mouse."
   (interactive "e")
   (let ((posn (event-start event)))
     (select-window (posn-window posn) t)
-    (svn-commit-visit-diff (posn-point posn))))
+    (svn-msg-visit-diff (posn-point posn))))
 
-(defun svn-commit-visit-diff (pos)
+(defun svn-msg-visit-diff (pos)
   "Visit the SVN diff of the file selected at point.  If taking
 the diff of the selected file doesn't make sense (for example,
 the file was just added), then simply visit the file."
   (interactive "d")
   (when (save-excursion
           (beginning-of-line)
-          (looking-at svn-commit-stat-line-regexp))
+          (looking-at svn-msg-stat-line-regexp))
     (let* ((type (aref (match-string 1) 0))
            (path (match-string 2))
            (name (concat "diff " path)))
       ;; Split the message window and create a buffer for the diff
       (delete-other-windows)
-      (select-window (split-window nil (max svn-commit-diff-height
+      (select-window (split-window nil (max svn-msg-diff-height
                                             window-min-height)))
       (if (memq type '(?A ?C ?I ?X ?? ?~))
           ;; Simply visit the file.
@@ -410,16 +412,16 @@ the file was just added), then simply visit the file."
         (setq buffer-read-only nil)
         (erase-buffer)
         ;; Put this buffer in to diff mode
-        (funcall svn-commit-diff-mode)
+        (funcall svn-msg-diff-mode)
         ;; Make the buffer read-only
         (setq buffer-read-only t)
         ;; Define 'q' to destroy the window and return to the message
         (let ((ro-map (assq 'buffer-read-only minor-mode-overriding-map-alist)))
           (when ro-map
-            (define-key (cdr ro-map) "q" #'svn-commit-quit-diff)))
+            (define-key (cdr ro-map) "q" #'svn-msg-quit-diff)))
         ;; Retrieve the diff, asynchronously
         (let ((proc (apply #'start-process name (current-buffer)
-                           "svn" "diff" (append svn-commit-diff-args
+                           "svn" "diff" (append svn-msg-diff-args
                                                 (list path)))))
           ;; Filter the process in the normal way, but don't move
           ;; point
@@ -437,7 +439,7 @@ the file was just added), then simply visit the file."
                                 (lambda (p e)
                                   (message "svn diff %s" e))))))))
 
-(defun svn-commit-quit-diff ()
+(defun svn-msg-quit-diff ()
   "Quit the currently visited diff.
 
 Deletes the current window, kills its buffer, and recenters the
@@ -453,7 +455,7 @@ message buffer."
 ;; Major mode
 ;;
 
-(define-derived-mode svn-commit-mode text-mode "SVN-Commit"
+(define-derived-mode svn-msg-mode text-mode "svn message"
   "Major mode for editing svn commit log messages.
 
 This major mode provides support for editing Subversion commit
@@ -484,16 +486,16 @@ Features
          (mapcar (lambda (re-face)
                    `(,(concat "^" (first re-face) "[ L][ +] \\(.*\\)")
                      (0 '(face ,(second re-face)
-                          category svn-commit-stat-line))
-                     (1 '(face svn-commit-path-face
-                          svn-commit-path t) prepend)))
-                 svn-commit-status-faces)))
-    (set (make-local-variable 'svn-commit-font-lock-keywords)
-         (append svn-commit-font-lock-keywords new-keywords)))
+                          category svn-msg-stat-line))
+                     (1 '(face svn-msg-path-face
+                          svn-msg-path t) prepend)))
+                 svn-msg-status-faces)))
+    (set (make-local-variable 'svn-msg-font-lock-keywords)
+         (append svn-msg-font-lock-keywords new-keywords)))
 
   ;; Enable font lock
   (set (make-local-variable 'font-lock-defaults)
-       '(svn-commit-font-lock-keywords nil nil nil nil))
+       '(svn-msg-font-lock-keywords nil nil nil nil))
 
   ;; Disable saveplace, since it's pretty close to meaningless and
   ;; very annoying on log messages
@@ -515,7 +517,7 @@ Features
   ;; Fix paragraph filling
   (make-variable-buffer-local 'paragraph-separate)
   (setq paragraph-separate
-        (concat svn-commit-info-regexp "\\|" paragraph-separate))
+        (concat svn-msg-info-regexp "\\|" paragraph-separate))
 
   ;; Cleanup extraneous whitespace on save (really, svn should do
   ;; this, but judging by the flamewars around this issue, it's not
@@ -525,39 +527,39 @@ Features
   ;; Activate the hyperlinks
   (save-excursion
     (goto-char (point-min))
-    (when (re-search-forward svn-commit-info-regexp nil t)
+    (when (re-search-forward svn-msg-info-regexp nil t)
       (let ((ov (make-overlay (point) (point-max))))
-        (overlay-put ov 'keymap svn-commit-stat-line-map)
-        (overlay-put ov 'svn-commit-msg
+        (overlay-put ov 'keymap svn-msg-stat-line-map)
+        (overlay-put ov 'svn-msg-msg
                      (lambda (obj pos)
-                       (substitute-command-keys "\\<svn-commit-stat-line-map>\
-\\[svn-commit-mouse-visit-diff], \\[svn-commit-visit-diff]: visit file/diff"))))))
+                       (substitute-command-keys "\\<svn-msg-stat-line-map>\
+\\[svn-msg-mouse-visit-diff], \\[svn-msg-visit-diff]: visit file/diff"))))))
 
   ;; Make the info block immutable
-  (svn-commit-immutate svn-commit-info-regexp)
+  (svn-msg-immutate svn-msg-info-regexp)
 
   ;; Display help echo based on point motion
-  (set (make-local-variable 'svn-commit-help-last-point) (point))
-  (set (make-local-variable 'svn-commit-help-last-msg) nil)
+  (set (make-local-variable 'svn-msg-help-last-point) (point))
+  (set (make-local-variable 'svn-msg-help-last-msg) nil)
   (run-with-idle-timer 0.1 t
     (lambda ()
-      (when (and (boundp 'svn-commit-help-last-msg)
-                 (boundp 'svn-commit-help-last-point)
-                 (/= svn-commit-help-last-point (point)))
-        (setq svn-commit-help-last-point (point))
+      (when (and (boundp 'svn-msg-help-last-msg)
+                 (boundp 'svn-msg-help-last-point)
+                 (/= svn-msg-help-last-point (point)))
+        (setq svn-msg-help-last-point (point))
         (let ((f (get-char-property (point) 'help-echo)))
           (if f
               (let ((msg (funcall f nil (current-buffer) (point))))
-                (when (not (string= msg svn-commit-help-last-msg))
-                  (setq svn-commit-help-last-msg msg)
+                (when (not (string= msg svn-msg-help-last-msg))
+                  (setq svn-msg-help-last-msg msg)
                   (message "%s" msg)))
-            (setq svn-commit-help-last-msg nil))))))
+            (setq svn-msg-help-last-msg nil))))))
 
   ;; Prompt to load an old commit message, if there is one.  This is
   ;; run off an idle timer so Emacs gets a chance to actually display
   ;; this buffer.  Unfortunately, this means it will pop up a dialog,
   ;; so we explicitly inhibit this.
-  (if svn-commit-offer-to-restore
+  (if svn-msg-offer-to-restore
       (run-with-idle-timer 0 nil
                            (lambda ()
                              (let ((last-nonmenu-event t))
@@ -566,13 +568,13 @@ Features
                                  svn-load-old-commit-message)))))))
 
 ;; Disable flyspell in the information block
-(put 'svn-commit-mode 'flyspell-mode-predicate 'svn-commit-flyspell-verify)
-(defun svn-commit-flyspell-verify ()
+(put 'svn-msg-mode 'flyspell-mode-predicate 'svn-msg-flyspell-verify)
+(defun svn-msg-flyspell-verify ()
   "Function used for `flyspell-generic-check-word-predicate' in
-svn-commit-mode.  Causes flyspell to ignore everything in the
+svn-msg-mode.  Causes flyspell to ignore everything in the
 info block."
   (save-excursion
     (save-match-data
-      (re-search-forward svn-commit-info-regexp nil t))))
+      (re-search-forward svn-msg-info-regexp nil t))))
 
-(provide 'svn-commit-mode)
+(provide 'svn-msg-core)

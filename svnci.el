@@ -30,7 +30,7 @@
 ;; the standard svn commit message editing, but provides support for
 ;; interactively choosing which files to include or exclude from the
 ;; commit while editing the commit message, in addition to the
-;; features provided by `svn-commit-mode' such as diff integration and
+;; features provided by `svn-msg-mode' such as diff integration and
 ;; font locking.
 
 ;; M-x svnci starts the commit process and initially includes the same
@@ -55,7 +55,7 @@
 ;;; Code:
 
 (eval-when-compile (require 'cl))
-(require 'svn-commit-mode)
+(require 'svn-msg-core)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Customizations
@@ -63,7 +63,7 @@
 
 (defgroup svnci nil
   "Interactive Subversion status/diff/add/commit."
-  :link '(custom-group-link svn-commit-mode))
+  :link '(custom-group-link svn-msg-mode))
 
 (defconst svnci-omit-face 'svnci-omit-face)
 (defface svnci-omit-face
@@ -98,13 +98,13 @@ path.")
 
 (defvar svnci-stat-line-map
   (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map svn-commit-stat-line-map)
+    (set-keymap-parent map svn-msg-stat-line-map)
     (define-key map " " #'svnci-toggle-commit)
     map)
   "Keymap used on svnci status lines.
 
-This builds on the svn-commit-mode status line keymap to add
-support for toggling the include/exclude status of files.")
+This builds on the svn-msg-mode status line keymap to add support
+for toggling the include/exclude status of files.")
 
 (defvar svnci-mode-map
   (let ((map (make-sparse-keymap)))
@@ -113,12 +113,12 @@ support for toggling the include/exclude status of files.")
   "Major mode keymap for svnci.")
 
 (defvar svnci-font-lock-keywords
-  `((,svnci-select-info-regexp . svn-commit-info-face))
+  `((,svnci-select-info-regexp . svn-msg-info-face))
   "Font lock keywords for `svnci-mode'.
 
 Note that this will be made buffer-local and appended to when
 entering svnci-mode in order to enable hyperlinks and status line
-highlighting according to `svn-commit-status-faces'.")
+highlighting according to `svn-msg-status-faces'.")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Message construction
@@ -143,9 +143,9 @@ moving point to a file status line and pressing \\[svnci-toggle-commit].
 Once ready to commit, use \\[svnci-commit] to commit the selected
 files with the given commit message.
 
-If `svn-commit-offer-to-restore' is non-nil, this first checks
-for any existing svnci messages (for example, from failed
-commits) and offers to restore them instead of constructing a new
+If `svn-msg-offer-to-restore' is non-nil, this first checks for
+any existing svnci messages (for example, from failed commits)
+and offers to restore them instead of constructing a new
 message."
   (interactive
    (if (consp current-prefix-arg)
@@ -187,14 +187,14 @@ message."
 
         ;; Construct the message contents
         (save-excursion
-          (svn-commit-without-modifying
+          (svn-msg-without-modifying
            (setq status (sort status #'svnci-compare-statuses))
            (insert "\n" svnci-select-info "\n")
            (dolist (s status)
              (insert (if (first s) "*" " ") " " (second s) "\n"))))
 
         ;; Now actually enter the mode
-        (let ((svn-commit-offer-to-restore nil))
+        (let ((svn-msg-offer-to-restore nil))
           (svnci-mode))))))
 
 (defun svnci-this ()
@@ -217,11 +217,11 @@ control, this first prompts to add the file."
         ((??)
          (when (y-or-n-p "File is not under version control.  Add? ")
            (let ((file-name (file-name-nondirectory buffer-file-name)))
-             (let ((svn-commit-offer-to-restore nil))
+             (let ((svn-msg-offer-to-restore nil))
                (svnci))
              ;; Include this file and exclude everything else
              (save-excursion
-               (svn-commit-without-modifying
+               (svn-msg-without-modifying
                 (re-search-forward svnci-select-info-regexp)
                 (skip-chars-forward "\n")
                 (while (progn
@@ -236,7 +236,7 @@ control, this first prompts to add the file."
         ((?I)
          (error "File is ignored."))
         (t
-         (let ((svn-commit-offer-to-restore nil))
+         (let ((svn-msg-offer-to-restore nil))
            (svnci (list buffer-file-name))))))))
 
 (defun svnci-normalize-paths (paths)
@@ -305,16 +305,16 @@ normalize the paths seen in the output of 'svn status'."
 only if a restore was performed.  The restored buffer will be
 put in svnci-mode."
 
-  (when svn-commit-offer-to-restore
+  (when svn-msg-offer-to-restore
     ;; Find an old message
     (let ((old-msg (svn-find-old-commit-message "svnci-commit")))
       (when old-msg
         ;; Prompt to restore
         (if (save-window-excursion
-              (when svn-commit-show-old-message
+              (when svn-msg-show-old-message
                 (let ((auto-mode-alist '()))
                   (find-file old-msg))
-                (let ((svn-commit-offer-to-restore nil))
+                (let ((svn-msg-offer-to-restore nil))
                   (svnci-mode)))
               (y-or-n-p (format "Old commit message found in %s.  Restore? "
                                 old-msg)))
@@ -564,7 +564,7 @@ buffer needs to be killed programmatically.")
 
   (or svnci-inhibit-kill-query
       (not svnci-mode)
-      (y-or-n-p "Kill SVN message buffer without committing? ")))
+      (yes-or-no-p "Kill SVN message buffer without committing? ")))
 
 (defun svnci-kill-emacs-query ()
   "Prompt before killing Emacs when there are uncommitted svnci
@@ -819,7 +819,7 @@ redirect process output to the terminal if run in batch mode."
   "Non-nil if this buffer is in svnci-mode.")
 (make-variable-buffer-local 'svnci-mode)
 
-(define-derived-mode svnci-mode svn-commit-mode "svnci"
+(define-derived-mode svnci-mode svn-msg-mode "svnci"
   "Major mode for editing svnci commit messages.
 
 In general, you should not use this directly.  Instead, use
@@ -836,9 +836,9 @@ message."
                    `(,(concat "^\\([ *] \\)" (first re-face)
                               "[ L][ +][ S][ K] \\(.*\\)")
                      (0 '(face ,(second re-face)
-                          category svn-commit-stat-line))
-                     (2 '(face svn-commit-path-face
-                          svn-commit-path t) prepend)
+                          category svn-msg-stat-line))
+                     (2 '(face svn-msg-path-face
+                          svn-msg-path t) prepend)
                      ,@(when (face-differs-from-default-p svnci-omit-face)
                          ;; If the omit face actually distinguishes
                          ;; omitted files, then hide the stars and
@@ -846,7 +846,7 @@ message."
                          `((1 '(face default invisible t))
                            ("^ .*" (goto-char (match-beginning 0)) nil
                             (0 svnci-omit-face prepend))))))
-                 svn-commit-status-faces)))
+                 svn-msg-status-faces)))
     (set (make-local-variable 'svnci-font-lock-keywords)
          (append svnci-font-lock-keywords new-keywords)))
 
@@ -854,8 +854,8 @@ message."
   (set (make-local-variable 'font-lock-defaults)
        '(svnci-font-lock-keywords nil nil nil nil))
 
-  ;; Make svn-commit-mode's diff work
-  (set (make-local-variable 'svn-commit-stat-line-regexp)
+  ;; Make svn-msg-mode's diff work
+  (set (make-local-variable 'svn-msg-stat-line-regexp)
        (concat "[ *] " svnci-stat-line-regexp))
 
   ;; Activate the hyperlinks
@@ -864,9 +864,9 @@ message."
     (when (re-search-forward svnci-select-info-regexp nil t)
       (let ((ov (make-overlay (point) (point-max) nil nil t)))
         (overlay-put ov 'keymap svnci-stat-line-map)
-        (overlay-put ov 'svn-commit-msg (lambda (obj pos)
+        (overlay-put ov 'svn-msg-msg (lambda (obj pos)
                        (substitute-command-keys "\\<svnci-stat-line-map>\
-\\[svn-commit-mouse-visit-diff], \\[svn-commit-visit-diff]: visit file/diff; \
+\\[svn-msg-mouse-visit-diff], \\[svn-msg-visit-diff]: visit file/diff; \
 \\[svnci-toggle-commit]: include/omit file"))))))
 
   ;; Fix paragraph filling
@@ -875,7 +875,7 @@ message."
         (concat svnci-select-info-regexp "\\|" paragraph-separate))
 
   ;; Make the info block immutable
-  (svn-commit-immutate svnci-select-info-regexp)
+  (svn-msg-immutate svnci-select-info-regexp)
 
   ;; Warn the user before killing the buffer
   (set (make-local-variable 'kill-buffer-query-functions)
