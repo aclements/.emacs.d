@@ -109,7 +109,8 @@
                        '(autofill flyspell-full))
 (atc:add-mode-features 'text-mode-hook
                        '(plain-newline filladapt))
-(require 'svn-msg nil t)
+(when (require 'svn-msg-load nil t)
+  (require 'svnci-load nil t))
 
 ;; Latex (AUCTeX)
 (defmodefeature latex-bindings
