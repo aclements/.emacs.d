@@ -22,6 +22,35 @@
 
 ;;; Commentary:
 
+;; list-buffers is arcane.  On the other hand, it does precisely what
+;; it says: it lists buffers.  However, time and again, its overly
+;; simplistic interface has been used as the basis for buffer
+;; navigation.
+
+;; Extensibility
+
+;; magic-buffer-list is designed to be highly extensible, but provide
+;; reasonable and usable defaults.  Many components go into producing
+;; a view of the buffer list, and the easiest way to customize
+;; magic-buffer-list is to piece together provided components.
+;; However, if the existing components aren't enough and you're
+;; willing to dive into Elisp, you can completely customize the look,
+;; feel, and organization of magic-buffer-list.
+
+;; Scalability
+
+;; magic-buffer-list is designed to effectively scale up to huge
+;; numbers of buffers, without losing its usefulness when used for
+;; small numbers of buffers.
+
+;; Recommended usage
+
+;; Bind C-x C-b to magic-buffer-list.  Bind M-r to
+;; magic-buffer-list-and-select-next and M-R to
+;; magic-buffer-list-and-select-prev.
+
+;;; Notes:
+
 ;; * Have a summary, either at the bottom line of the buffer or in the
 ;;   mode line (custom mode line format), of the current
 ;;   grouping/limiting
@@ -171,35 +200,6 @@
 ;;   buffer switching is hard-coded and presumably predictable, where
 ;;   buffer switch entropy is adaptive and possibly unpredictable.  Is
 ;;   there any way to unify these?
-
-
-
-;; list-buffers is arcane.  On the other hand, it does precisely what
-;; it says: it lists buffers.  However, time and again, its overly
-;; simplistic interface has been used as the basis for buffer
-;; navigation.
-
-;; Extensibility
-
-;; magic-buffer-list is designed to be highly extensible, but provide
-;; reasonable and usable defaults.  Many components go into producing
-;; a view of the buffer list, and the easiest way to customize
-;; magic-buffer-list is to piece together provided components.
-;; However, if the existing components aren't enough and you're
-;; willing to dive into Elisp, you can completely customize the look,
-;; feel, and organization of magic-buffer-list.
-
-;; Scalability
-
-;; magic-buffer-list is designed to effectively scale up to huge
-;; numbers of buffers, without losing its usefulness when used for
-;; small numbers of buffers.
-
-;; Recommended usage
-
-;; Bind C-x C-b to magic-buffer-list.  Bind M-r to
-;; magic-buffer-list-and-select-next and M-R to
-;; magic-buffer-list-and-select-prev.
 
 ;;; Customization:
 
