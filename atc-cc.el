@@ -42,6 +42,14 @@ block."
 (defmodefeature c-compile
   (local-set-key "\C-c\C-c" (function compile)))
 
+(defmodefeature java-find-file
+  (require 'java-find-file))
+
+(defmodefeature java-fix-generics
+  ;; Setting this to t at least fixes the indentation of braces for
+  ;; constructors of generic classes.  It might fix other things, too.
+  (setq c-recognize-<>-arglists t))
+
 (defun streambase-style ()
   (c-set-offset 'inline-open 0)
   (c-set-offset 'label '*)
@@ -86,7 +94,7 @@ This is not valid syntax in C, but can be in C-like languages."
            (message "Setting style for Polyglot")
            (setq c-basic-offset 4
                  indent-tabs-mode nil))
-          ((string-match "/xtc/pub/xtc" filename)
+          ((string-match "/pub/xtc" filename)
            (message "Setting style for XTC")
            ;; This is not the style used by the XTC codebase
            (setq c-basic-offset 4
@@ -121,6 +129,9 @@ This is not valid syntax in C, but can be in C-like languages."
                                   c-auto-hungry c-filladapt
                                   c-magic-punctuation c-show-func
                                   c-compile c-choose-style))
+;; Java features
+(atc:add-mode-features 'java-mode-hook
+                       '(java-find-file java-fix-generics))
 ;; Set Perl "features", for those unhappy times...
 (atc:add-mode-features 'perl-mode-hook
                        '(flyspell-prog final-newline-always
