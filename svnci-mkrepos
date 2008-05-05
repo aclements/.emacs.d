@@ -1,0 +1,83 @@
+#!/bin/zsh
+
+# Construct a new SVN repository in /tmp that demonstrates essentially
+# every state a file can possibly be in according to SVN.
+
+set -e
+
+cd /tmp
+mkdir svnci-$$
+cd svnci-$$
+svnadmin create repos
+RP=file:///tmp/svnci-$$/repos
+
+svn mkdir -m "Initial directories" $RP/main $RP/ext
+
+svn co $RP/main
+
+cd main
+
+echo "test" > unmodified
+echo "conflict 1" > conflicted
+echo "deleted" > deleted
+echo "ignored" > ignored
+echo "before" > modified
+echo "first incarnation" > replaced
+echo "before missing" > missing
+echo "obstructed" > obstructed
+mkdir dir
+echo "before" > dir/modified
+mkdir removed-dir
+echo "removed" > removed-dir/removed
+svn add -N unmodified conflicted deleted modified replaced missing obstructed dir removed-dir removed-dir/removed
+svn propset svn:ignore "ignored" .
+svn propset svn:externals "ext $RP/ext" .
+svn ci -m "Set up"
+
+# Pull in an set up external
+svn up
+echo "external modified before" > ext/modified
+svn add ext/modified
+svn ci -m "Set up external" ext
+
+# Set up conflict
+cd ../
+svn co $RP/main main2
+cd main2
+echo "conflict 2" > conflicted
+svn ci -m "Make conflict" conflicted
+
+cd ../main
+echo "conflict 3" > conflicted
+svn up
+
+# Create outstanding changes
+echo "added" > added
+svn add added
+svn rm deleted
+echo "after" > modified
+svn rm replaced
+echo "second incarnation" > replaced
+svn add replaced
+echo "external added" > ext/added
+svn add ext/added
+echo "external modified after" > ext/modified
+echo "external unversioned" > ext/unversioned
+echo "unversioned" > unversioned
+rm missing
+rm obstructed
+mkdir obstructed
+
+mkdir added-dir
+echo "added" > added-dir/added
+svn add added-dir
+echo "unversioned" > added-dir/unversioned
+
+echo "after" > dir/modified
+
+svn rm removed-dir
+
+mkdir unversioned-dir
+echo "unversioned" > unversioned-dir/unversioned
+
+echo "Created test checkout in /tmp/svnci-$$/main"
