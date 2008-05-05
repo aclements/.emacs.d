@@ -105,7 +105,8 @@
 ;; Misc
 
 (defmodefeature plain-newline
-  (local-set-key "\C-m" (function newline)))
+  (if (eq (key-binding "\C-m") 'newline-and-indent)
+      (local-set-key "\C-m" (function newline))))
 (defun sh-newline-and-actually-indent ()
   (interactive)
   (sh-newline-and-indent)
