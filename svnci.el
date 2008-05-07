@@ -629,23 +629,25 @@ PREVIEW controls whether or not this is actually a dry-run.  See
       (skip-chars-forward "\n")
       (while (looking-at (concat "[ *] " svnci-stat-line-regexp))
         (when (= (char-after) ?*)
-          (let ((status (aref (match-string 1) 0))
+          (let ((state (aref (match-string 1) 0))
                 (path (match-string 2)))
             (setq to-commit (cons path to-commit))
-            (when (= (aref (match-string 1) 0) ??)
+            (when (= state ??)
               (setq to-add (cons path to-add)))
-            (cond ((and (= status ?D) (file-directory-p path))
+            (cond ((and (= state ?D) (file-directory-p path))
                    (setq need-recursive t)
                    ;; XXX Check that all children are being removed,
                    ;; too, and don't including them in to-commit.
                    )
-                  ((and (= status ?A) (file-directory-p path))
+                  ((and (= state ?A) (file-directory-p path))
                    ;; XXX This is conservative.  If all of the
                    ;; children are also selected for addition, then
                    ;; we don't need non-recursive.
                    (setq need-non-recursive t)))))
         (end-of-line)
         (skip-chars-forward "\n"))
+      (setq to-add (nreverse to-add)
+            to-commit (nreverse to-commit))
       (unless (eobp)
         (error "Unable to parse list of files to commit"))
       (when (and need-recursive need-non-recursive)
