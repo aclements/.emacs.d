@@ -38,8 +38,8 @@
 (add-to-list 'auto-mode-alist (cons "\\.h\\'" #'h-auto-mode))
 
 
-;;;### (autoloads (h-auto-mode) "h-auto-mode" "h-auto-mode.el" (18511
-;;;;;;  8274))
+;;;### (autoloads (h-auto-mode) "h-auto-mode" "h-auto-mode.el" (18512
+;;;;;;  4200))
 ;;; Generated autoloads from h-auto-mode.el
 
 (autoload (quote h-auto-mode) "h-auto-mode" "\
@@ -51,7 +51,7 @@ same base name and a different extension and selects the major
 mode based on that.  If no such file exists, it takes a vote from
 all of the recognized files in the same directory as the header.
 
-\(fn)" nil nil)
+\(fn)" t nil)
 
 ;;;***
 

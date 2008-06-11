@@ -50,6 +50,7 @@ the header file.  First, it sees if another file exists with the
 same base name and a different extension and selects the major
 mode based on that.  If no such file exists, it takes a vote from
 all of the recognized files in the same directory as the header."
+  (interactive)
 
   (let ((mode (h-auto-mode-guess (buffer-file-name))))
     (if mode
