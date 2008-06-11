@@ -118,9 +118,10 @@ This is not valid syntax in C, but can be in C-like languages."
 
 ;;; Set up the mode itself
 
-;; A lot of .h files are actually C++.  It would be really cool if
-;; this could guess, based on other files in the directory.
-(add-to-list 'auto-mode-alist (cons "\\.h\\'" (function c++-mode)))
+;; Automatically determine the major mode of header files
+(unless (require 'h-auto-mode-load nil t)
+  ;; A lot of .h files are actually C++
+  (add-to-list 'auto-mode-alist (cons "\\.h\\'" (function c++-mode))))
 
 ;; Set C's features
 (atc:add-mode-features 'c-mode-common-hook
