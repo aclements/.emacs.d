@@ -86,4 +86,4 @@
 
 (load "atc-google" t)                   ; Non-fatal if missing
 (load "atc-streambase" t)
-(laod "atc-vmware" t)
+(load "atc-vmware" t)

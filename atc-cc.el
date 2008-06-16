@@ -65,8 +65,10 @@ block."
 
 (defun vmware-style ()
   (c-set-style "k&r")
-  ;; 89-character limit.
-  (set (make-local-variable 'fill-column) 89)
+  ;; 89-character limit.  Apparently only some of the company uses
+  ;; this.  Instead, use the common denominator 79.
+  ;;(set (make-local-variable 'fill-column) 89)
+  (set (make-local-variable 'fill-column) 79)
   (set (make-local-variable 'c-basic-offset) 3))
 
 (defun cc-fix-slash-paren ()
