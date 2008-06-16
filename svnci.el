@@ -361,10 +361,10 @@ meaning of the remaining fields."
       ;; distinguish ignored files from files that simply have no
       ;; changes.
       (dolist (c commitable)
-        (delete (third c) paths))
+        (setq paths (delete (third c) paths)))
       (let ((rest-paths (mapcar #'third all)))
         (dolist (c commitable)
-          (delete (third c) rest-paths))
+          (setq rest-paths (delete (third c) rest-paths)))
         (dolist (p paths)
           ;; Paths that don't satisfy this predicate are either
           ;; unchanged or ignored and we can't tell the difference
