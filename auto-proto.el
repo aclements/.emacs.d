@@ -8,6 +8,25 @@
    (progn (c-end-of-statement) (point)))
    )
 
+(defmacro auto-proto-p* (parser)
+  (let ((gather (gensym "gather"))
+        (val (gensym "val")))
+    `(let ((,gather nil))
+       (let ((,val ,parser))
+         (while ,val
+           (setq ,gather (cons ,val ,gather))
+           (setq ,val ,parser)))
+       (nreverse ,gather))))
+
+(defmacro auto-proto-ptry (&rest parser)
+  (let ((start (gensym "start"))
+        (result (gensym "result")))
+    `(let* ((,start (point))
+            (,result (progn ,@parser)))
+       (unless ,result
+         (goto-char ,start))
+       ,result)))
+
 (defun auto-proto-read-token (&rest tokens)
   (when (looking-at (regexp-opt tokens 'words))
     (goto-char (match-end 0))
@@ -38,14 +57,22 @@
            (or (auto-proto-read-token
                 ;; Function specifier (6.7.4)
                 "inline")
-               (auto-proto-read-typequal))))))
+               (auto-proto-read-typequal)
+               (auto-proto-read-attribute))))))
 
 (defun auto-proto-read-typequal ()
   (auto-proto-read-token
    ;; Type qualifier (6.7.3)
-   "const" "restrict" "volatile"
-   ;; XXX Attribute
-   ))
+   "const" "restrict" "volatile"))
+
+(defun auto-proto-read-attribute ()
+  ;; Attribute (GCC attribute syntax)
+  (auto-proto-ptry
+   (when (and (auto-proto-read-token "__attribute__" "__attribute")
+              (looking-at "("))
+     (forward-list)
+     (c-forward-syntactic-ws)
+     'attribute)))
 
 (defun auto-proto-read-basic-typespec ()
   (auto-proto-read-token
@@ -64,29 +91,9 @@
                 (c-forward-syntactic-ws))))
         (list s/u/e name is-complete)))))
 
-(defmacro auto-proto-p* (parser)
-  (let ((gather (gensym "gather"))
-        (val (gensym "val")))
-    `(let ((,gather nil))
-       (let ((,val ,parser))
-         (while ,val
-           (setq ,gather (cons ,val ,gather))
-           (setq ,val ,parser)))
-       (nreverse ,gather))))
-
-(defmacro auto-proto-ptry (&rest parser)
-  (let ((start (gensym "start"))
-        (result (gensym "result")))
-    `(let* ((,start (point))
-            (,result (progn ,@parser)))
-       (unless ,result
-         (goto-char ,start))
-       ,result)))
-
 (defun auto-proto-read-declspec ()
   ;; Read a declaration specifier (6.7)
   (auto-proto-ptry
-    (c-forward-syntactic-ws)              ;XXX
     (catch 'failed
       (let (s1 typespec s2 tmp (storage (list nil)))
         ;; Gather declaration specifiers other than the type specifier
@@ -133,7 +140,8 @@
   (auto-proto-ptry
     (if (auto-proto-read-symbol "*")
         ;; Pointer
-        (let ((qs (auto-proto-p* (auto-proto-read-typequal)))
+        (let ((qs (auto-proto-p* (or (auto-proto-read-typequal)
+                                     (auto-proto-read-attribute))))
               (decor (auto-proto-read-declarator)))
           (when decor
             ;; Fill in the hole with the pointer
@@ -180,21 +188,34 @@
      decor)))
 
 (defun auto-proto-read-declaration ()
-  (let ((ds (auto-proto-read-declspec)))
-    (when ds
-      (let ((storage (first ds))
-            (declspec (second ds))
-            (declarator (auto-proto-read-declarator)))
-        ;; XXX decor is optional if declspec declares a tag or is a
-        ;; typedef.  Must be followed by ',', '=', ';', or '{'
-        (when declarator
-          (let ((decor (first declarator))
-                (hole (second declarator))
-                (name (third declarator)))
-            (if decor
-                (setcar hole declspec)
-              (setq decor declspec))
-            (list decor name)))))))
+  ;; Set up the parse.  Change "_" to be a word character, since it's
+  ;; part of the identifier syntax.  I don't know why cc-mode makes
+  ;; this a symbol character, but it screws up token parsing.
+  (let ((stab (make-syntax-table (syntax-table))))
+    (modify-syntax-entry ?_ "w" stab)
+    (with-syntax-table stab
+      (c-forward-syntactic-ws)
+
+      (let ((ds (auto-proto-read-declspec)))
+        (when ds
+          (let ((storage (first ds))
+                (declspec (second ds))
+                (declarator (auto-proto-read-declarator)))
+            ;; XXX decor is optional if declspec declares a tag or is a
+            ;; typedef.  Must be followed by ',', '=', ';', or '{'
+            (when declarator
+              ;; Ugh, attributes can also appear here.  Just toss them
+              ;; out.
+              (auto-proto-p* (auto-proto-read-attribute))
+              ;; Fill the declarator hole with the declaration
+              ;; specifier list.
+              (let ((decor (first declarator))
+                    (hole (second declarator))
+                    (name (third declarator)))
+                (if decor
+                    (setcar hole declspec)
+                  (setq decor declspec))
+                (list decor name)))))))))
 
 ;; (fun name type start end)
 ;; (var name type start end)
