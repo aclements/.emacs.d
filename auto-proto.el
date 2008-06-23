@@ -1,5 +1,7 @@
 ;; What about updating prototypes?
 
+(eval-when-compile (require 'cl))
+
 (defun auto-proto-insert ()
   (interactive)
 
@@ -27,17 +29,21 @@
          (goto-char ,start))
        ,result)))
 
+;; XXX This is goofy.  The c-forward-syntactic-ws should happen first,
+;; but this requires a number of changes.
 (defun auto-proto-read-token (&rest tokens)
   (when (looking-at (regexp-opt tokens 'words))
     (goto-char (match-end 0))
-    (c-forward-syntactic-ws)
-    (intern (match-string 0))))
+    (prog1
+        (intern (match-string 0))
+      (c-forward-syntactic-ws))))
 
 (defun auto-proto-read-symbol (&rest symbols)
   (when (looking-at (regexp-opt symbols))
     (goto-char (match-end 0))
-    (c-forward-syntactic-ws)
-    (match-string 0)))
+    (prog1
+        (match-string 0)
+      (c-forward-syntactic-ws))))
 
 (defun auto-proto-read-name ()
   (when (looking-at "[[:alpha:]_][[:alnum:]_$]*")
@@ -187,6 +193,17 @@
          (c-forward-syntactic-ws)))
      decor)))
 
+(defun auto-proto-end-of-statement ()
+  ;; Place point immediately after the next significant semicolon or
+  ;; close brace, skipping over any bracket, brace or paren
+  ;; constructs.  This is useful for re-synchronizing while parsing.
+  (while (and (/= (char-before (point)) ?\;)
+              (/= (char-before (point)) ?})
+              (c-syntactic-re-search-forward "[[{(;]" nil t))
+    (when (/= (char-before (point)) ?\;)
+      (backward-char)
+      (forward-list))))
+
 (defun auto-proto-read-declaration ()
   ;; Set up the parse.  Change "_" to be a word character, since it's
   ;; part of the identifier syntax.  I don't know why cc-mode makes
@@ -196,56 +213,118 @@
     (with-syntax-table stab
       (c-forward-syntactic-ws)
 
-      (let ((ds (auto-proto-read-declspec)))
+      ;; Read the declaration specifier list
+      (let* ((start (point-marker))
+             (ds (auto-proto-read-declspec))
+             (storage (first ds))
+             (declspec (second ds)))
         (when ds
-          (let ((storage (first ds))
-                (declspec (second ds))
-                (declarator (auto-proto-read-declarator)))
-            ;; XXX decor is optional if declspec declares a tag or is a
-            ;; typedef.  Must be followed by ',', '=', ';', or '{'
+          ;; Read the optional declarator
+          (let ((declarator (auto-proto-read-declarator)))
+            ;; Ugh, attributes can also appear here.  Just toss them
+            ;; out.
             (when declarator
-              ;; Ugh, attributes can also appear here.  Just toss them
-              ;; out.
-              (auto-proto-p* (auto-proto-read-attribute))
-              ;; Fill the declarator hole with the declaration
-              ;; specifier list.
-              (let ((decor (first declarator))
-                    (hole (second declarator))
-                    (name (third declarator)))
-                (if decor
-                    (setcar hole declspec)
-                  (setq decor declspec))
-                (list decor name)))))))))
+              (auto-proto-p* (auto-proto-read-attribute)))
+            ;; Read the symbol following the declarator
+            (let* ((end (point-marker))
+                   (next
+                    (if declarator
+                        (auto-proto-read-symbol "," "=" ";" "{")
+                      (auto-proto-read-symbol ";")))
+                   (has-body (equal next "{")))
+              ;; Get past the end of the declaration
+              (cond ((or (string= next ",") (string= next "="))
+                     ;; Stop after the next significant semicolon
+                     (auto-proto-end-of-statement))
+                    ((string= next "{")
+                     ;; Stop after the end of the body
+                     (goto-char end)
+                     (c-forward-syntactic-ws)
+                     (forward-list)))
+              ;; Construct the return value
+              (if declarator
+                  ;; Fill the declarator hole with the declaration
+                  ;; specifier list.
+                  (let ((decor (first declarator))
+                        (hole (second declarator))
+                        (name (third declarator)))
+                    (if decor
+                        (setcar hole declspec)
+                      (setq decor declspec))
+                    (list decor storage name has-body start end))
+                (list declspec storage nil nil start end)))))))))
 
-;; (fun name type start end)
-;; (var name type start end)
-;; (type name type start end)
+(defun auto-proto-decl-type (decl)
+  (first decl))
+
+(defun auto-proto-decl-storage (decl)
+  (second decl))
+
+(defun auto-proto-decl-name (decl)
+  (third decl))
+
+(defun auto-proto-decl-has-body (decl)
+  (fourth decl))
+
+(defun auto-proto-decl-extents (decl)
+  (cons (fifth decl) (sixth decl)))
 
 (defun auto-proto-get-proto ()
   ;; Point must be at the beginning of the function declaration
-  (let* ((start (point-marker))
-         (decl (auto-proto-read-declaration))
-         (end (point-marker)))
+  (let* ((decl (auto-proto-read-declaration))
+         (extents (auto-proto-decl-extents decl)))
     (when decl
       (replace-regexp-in-string
        "\\(^[ \t]*\\)\\|\\([ \t]*$\\)" ""
        (replace-regexp-in-string
         "[ \t]*\n[ \t]*" " "
-        (buffer-substring start end))))))
+        (buffer-substring (car extents) (cdr extents)))))))
+
+(defun auto-proto-summarize ()
+  (c-save-buffer-state
+      (decls)
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let ((decl (auto-proto-read-declaration)))
+          (setq decls (cons decl decls))
+          (unless decl
+            (auto-proto-end-of-statement)))))
+    (nreverse decls)))
+
+(defun auto-proto-summarize-clear ()
+  (remove-overlays nil nil 'owner 'auto-proto))
+
+(defun auto-proto-summarize-test ()
+  (auto-proto-summarize-clear)
+  (let ((summ (auto-proto-summarize)) (nils 0))
+    (dolist (decl summ)
+      (if (null decl)
+          (setq nils (1+ nils))
+        (let* ((extents (auto-proto-decl-extents decl))
+               (ov (make-overlay (car extents) (cdr extents))))
+          (overlay-put ov 'owner 'auto-proto)
+          (overlay-put ov 'face
+                       '((:background "midnight blue"))))))
+    (message "%d failed decls" nils)))
 
 ;; For a function definition, insert or update prototype in file
 ;; prologue or header.  Offer to make it static if it is not already
 ;; marked so either in the definition or in an existing prototype.
+;; (('fn ...) storage name 'body)
 ;;
 ;; For a function prototype, do nothing.
+;; (('fn ...) storage name nil)
 ;;
 ;; For a typedef, insert or update prototype in header.
+;; (type 'typedef name nil)
 ;;
 ;; For a struct/union/enum type, insert or update prototype in file
 ;; prologue or header.  Offer to include the definition or not,
 ;; defaulting to the current state if updating or to not including
 ;; otherwise.  Or should it always strip the definition?
+;; (('struct/union/enum ...) storage nil nil)
 ;;
 ;; For a variable declaration, if static do nothing.  Otherwise,
 ;; insert or update an extern declaration in the header.
-
+;; (type storage name nil)
