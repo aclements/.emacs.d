@@ -202,7 +202,16 @@
               (c-syntactic-re-search-forward "[[{(;]" nil t))
     (when (/= (char-before (point)) ?\;)
       (backward-char)
-      (forward-list))))
+      (forward-list))
+    ;; A close brace will be followed by a semicolon in the case of a
+    ;; declaration (for example, struct or array initialization),
+    ;; though not in the case of a function definition.
+    (when (= (char-before (point)) ?})
+      (let ((semi (save-excursion
+                    (c-forward-syntactic-ws)
+                    (when (= (char-after (point)) ?\;)
+                      (1+ (point))))))
+        (when semi (goto-char semi))))))
 
 (defun auto-proto-read-declaration ()
   ;; Set up the parse.  Change "_" to be a word character, since it's
@@ -282,20 +291,25 @@
 
 (defun auto-proto-summarize ()
   (c-save-buffer-state
-      (decls)
+      ((progress (make-progress-reporter "Scanning declarations... "
+                                         (point-min) (point-max)))
+       decls)
     (save-excursion
       (goto-char (point-min))
       (while (not (eobp))
+        (progress-reporter-update progress (point))
         (let ((decl (auto-proto-read-declaration)))
           (setq decls (cons decl decls))
           (unless decl
             (auto-proto-end-of-statement)))))
+    (progress-reporter-done progress)
     (nreverse decls)))
 
 (defun auto-proto-summarize-clear ()
   (remove-overlays nil nil 'owner 'auto-proto))
 
 (defun auto-proto-summarize-test ()
+  (interactive)
   (auto-proto-summarize-clear)
   (let ((summ (auto-proto-summarize)) (nils 0))
     (dolist (decl summ)
