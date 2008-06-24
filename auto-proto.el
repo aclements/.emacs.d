@@ -212,48 +212,51 @@
   (let ((stab (make-syntax-table (syntax-table))))
     (modify-syntax-entry ?_ "w" stab)
     (with-syntax-table stab
-      (c-forward-syntactic-ws)
+      (auto-proto-ptry
+       (catch 'return
+         (c-forward-syntactic-ws)
 
-      ;; Read the declaration specifier list
-      (let* ((start (point-marker))
-             (ds (auto-proto-read-declspec))
-             (storage (first ds))
-             (declspec (second ds)))
-        (when ds
-          ;; Read the optional declarator
-          (let ((declarator (auto-proto-read-declarator)))
-            ;; Ugh, attributes can also appear here.  Just toss them
-            ;; out.
-            (when declarator
-              (auto-proto-p* (auto-proto-read-attribute)))
-            ;; Read the symbol following the declarator
-            (let* ((end (point-marker))
-                   (next
-                    (if declarator
-                        (auto-proto-read-symbol "," "=" ";" "{")
-                      (auto-proto-read-symbol ";")))
-                   (has-body (equal next "{")))
-              ;; Get past the end of the declaration
-              (cond ((or (string= next ",") (string= next "="))
-                     ;; Stop after the next significant semicolon
-                     (auto-proto-end-of-statement))
-                    ((string= next "{")
-                     ;; Stop after the end of the body
-                     (goto-char end)
-                     (c-forward-syntactic-ws)
-                     (forward-list)))
-              ;; Construct the return value
-              (if declarator
-                  ;; Fill the declarator hole with the declaration
-                  ;; specifier list.
-                  (let ((decor (first declarator))
-                        (hole (second declarator))
-                        (name (third declarator)))
-                    (if decor
-                        (setcar hole declspec)
-                      (setq decor declspec))
-                    (list decor storage name has-body start end))
-                (list declspec storage nil nil start end)))))))))
+         ;; Read the declaration specifier list
+         (let* ((start (point-marker))
+                (ds (or (auto-proto-read-declspec)
+                        (throw 'return nil)))
+                (storage (first ds))
+                (declspec (second ds)))
+           ;; Read the optional declarator
+           (let ((declarator (auto-proto-read-declarator)))
+             ;; Ugh, attributes can also appear here.  Just toss them
+             ;; out.
+             (when declarator
+               (auto-proto-p* (auto-proto-read-attribute)))
+             ;; Read the symbol following the declarator
+             (let* ((end (point-marker))
+                    (next
+                     (or (if declarator
+                             (auto-proto-read-symbol "," "=" ";" "{")
+                           (auto-proto-read-symbol ";"))
+                         (throw 'return nil)))
+                    (has-body (equal next "{")))
+               ;; Get past the end of the declaration
+               (cond ((or (string= next ",") (string= next "="))
+                      ;; Stop after the next significant semicolon
+                      (auto-proto-end-of-statement))
+                     ((string= next "{")
+                      ;; Stop after the end of the body
+                      (goto-char end)
+                      (c-forward-syntactic-ws)
+                      (forward-list)))
+               ;; Construct the return value
+               (if declarator
+                   ;; Fill the declarator hole with the declaration
+                   ;; specifier list.
+                   (let ((decor (first declarator))
+                         (hole (second declarator))
+                         (name (third declarator)))
+                     (if decor
+                         (setcar hole declspec)
+                       (setq decor declspec))
+                     (list decor storage name has-body start end))
+                 (list declspec storage nil nil start end))))))))))
 
 (defun auto-proto-decl-type (decl)
   (first decl))
