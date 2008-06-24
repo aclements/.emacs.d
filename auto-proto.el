@@ -2,14 +2,6 @@
 
 (eval-when-compile (require 'cl))
 
-(defun auto-proto-insert ()
-  (interactive)
-
-  (buffer-substring
-   (progn (c-beginning-of-defun) (point))
-   (progn (c-end-of-statement) (point)))
-   )
-
 (defmacro auto-proto-p* (parser)
   (let ((gather (gensym "gather"))
         (val (gensym "val")))
@@ -197,19 +189,19 @@
   ;; Place point immediately after the next significant semicolon or
   ;; close brace, skipping over any bracket, brace or paren
   ;; constructs.  This is useful for re-synchronizing while parsing.
-  (while (and (/= (char-before (point)) ?\;)
-              (/= (char-before (point)) ?})
+  (while (and (/= (char-before) ?\;)
+              (/= (char-before) ?})
               (c-syntactic-re-search-forward "[[{(;]" nil t))
-    (when (/= (char-before (point)) ?\;)
+    (when (/= (char-before) ?\;)
       (backward-char)
       (forward-list))
     ;; A close brace will be followed by a semicolon in the case of a
     ;; declaration (for example, struct or array initialization),
     ;; though not in the case of a function definition.
-    (when (= (char-before (point)) ?})
+    (when (= (char-before) ?})
       (let ((semi (save-excursion
                     (c-forward-syntactic-ws)
-                    (when (= (char-after (point)) ?\;)
+                    (when (= (char-after) ?\;)
                       (1+ (point))))))
         (when semi (goto-char semi))))))
 
@@ -283,16 +275,20 @@
   (let* ((decl (auto-proto-read-declaration))
          (extents (auto-proto-decl-extents decl)))
     (when decl
-      (replace-regexp-in-string
-       "\\(^[ \t]*\\)\\|\\([ \t]*$\\)" ""
+      (list
        (replace-regexp-in-string
-        "[ \t]*\n[ \t]*" " "
-        (buffer-substring (car extents) (cdr extents)))))))
+        "\\(^[ \t]*\\)\\|\\([ \t]*$\\)" ""
+        (replace-regexp-in-string
+         "[ \t]*\n[ \t]*" " "
+         (buffer-substring (car extents) (cdr extents))))
+       decl))))
 
 (defun auto-proto-summarize ()
   (c-save-buffer-state
-      ((progress (make-progress-reporter "Scanning declarations... "
-                                         (point-min) (point-max)))
+      ((progress (make-progress-reporter
+                  (format "Scanning declarations in %s... "
+                          (file-name-nondirectory (buffer-file-name)))
+                  (point-min) (point-max)))
        decls)
     (save-excursion
       (goto-char (point-min))
@@ -321,6 +317,78 @@
           (overlay-put ov 'face
                        '((:background "midnight blue"))))))
     (message "%d failed decls" nils)))
+
+(defun auto-proto ()
+  (interactive)
+  (save-excursion
+    ;; Get this declaration
+    (c-beginning-of-defun)
+    (let* ((proto (or (auto-proto-get-proto)
+                      (error "Error getting declaration at point")))
+           (this-text (first proto))
+           (this-decl (second proto)))
+      (cond ((eq (car (auto-proto-decl-type this-decl)) 'fn)
+             ;; Insert or update function prototype
+             (unless (auto-proto-decl-has-body this-decl)
+               (auto-proto-error-decl
+                this-decl
+                "This declaration is already a prototype"))
+             (auto-proto-do-function-prototype this-text this-decl))
+            (t
+             ;; XXX Highlight decl
+             (auto-proto-error-decl
+              this-decl
+              "I don't know how to prototype this"))))))
+
+(defun auto-proto-error-decl (decl fmt &rest args)
+  ;; XXX Highlight decl
+  (funcall #'error fmt args))
+
+(defun auto-proto-name-alist (decls)
+  (mapcar (lambda (decl) (cons (auto-proto-decl-name decl) decl))
+          decls))
+
+(defun auto-proto-highlight-decl (decl)
+  ;; XXX
+  nil)
+
+(defun auto-proto-do-function-prototype (text decl)
+  ;; Get the summary of this file so we can figure out if decl already
+  ;; has a prototype and what decl is relative to
+  (let* ((decl-name (or (auto-proto-decl-name decl)
+                        (auto-proto-error-decl
+                         decl
+                         "This function doesn't have a name")))
+         (file-summ (auto-proto-summarize))
+         (file-protos (remove-if-not
+                       (lambda (decl)
+                         (and (eq (car (auto-proto-decl-type decl)) 'fn)
+                              (not (auto-proto-decl-has-body decl))))
+                       file-summ))
+         (file-proto-names (auto-proto-name-alist file-protos))
+         ;; XXX Header file
+         (in-file (cdr (assoc decl-name file-proto-names)))
+         )
+    (cond
+     (in-file
+      (let ((extents (auto-proto-decl-extents in-file)))
+        ;; Point out the prototype being replaced
+        (goto-char (car extents))
+        (auto-proto-highlight-decl in-file)
+        ;; If the prototype is static and the declaration isn't
+        ;; already static, make the new prototype static
+        (when (and (eq (auto-proto-decl-storage in-file) 'static)
+                   (not (eq (auto-proto-decl-storage decl) 'static)))
+          (setq text (concat "static " text)))
+        ;; Prompt
+        (when (y-or-n-p (format "Replace prototype with\n %s;\n? " text))
+          ;; Replace the old prototype
+          (delete-region (car extents) (cdr extents))
+          (goto-char (car extents))
+          (insert text))))
+     (t
+      ;; XXX Figure out where to put the prototype
+      ))))
 
 ;; For a function definition, insert or update prototype in file
 ;; prologue or header.  Offer to make it static if it is not already
