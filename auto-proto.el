@@ -48,14 +48,16 @@
   (let (tmp)
     (cond ((setq tmp (auto-proto-read-token
                       ;; Storage-class specifier (6.7.1)
-                      "typedef" "extern" "static" "auto" "register"))
-           (setcar storage tmp)
+                      "typedef" "extern" "static" "auto" "register"
+                      ;; Function specifier (6.7.4) While this is
+                      ;; technically not a storage class specifier, it
+                      ;; does act a lot like one, so we include it
+                      ;; here.
+                      "inline"))
+           (setcar storage (cons tmp (car storage)))
            t)
           (t
-           (or (auto-proto-read-token
-                ;; Function specifier (6.7.4)
-                "inline")
-               (auto-proto-read-typequal)
+           (or (auto-proto-read-typequal)
                (auto-proto-read-attribute))))))
 
 (defun auto-proto-read-typequal ()
@@ -189,21 +191,46 @@
   ;; Place point immediately after the next significant semicolon or
   ;; close brace, skipping over any bracket, brace or paren
   ;; constructs.  This is useful for re-synchronizing while parsing.
+
+  ;; If we're already at the end of a statement, start moving to the
+  ;; next.
+  (when (or (= (char-before) ?\;) (= (char-before) ?}))
+    (unless (eobp)
+      (forward-char)))
   (while (and (/= (char-before) ?\;)
               (/= (char-before) ?})
-              (c-syntactic-re-search-forward "[[{(;]" nil t))
+              (or (c-syntactic-re-search-forward "[[{(;]" nil t)
+                  (progn (goto-char (point-max)) nil)))
+    ;; If we hit a bracket, brace, or paren, skip to the other side.
     (when (/= (char-before) ?\;)
       (backward-char)
       (forward-list))
     ;; A close brace will be followed by a semicolon in the case of a
     ;; declaration (for example, struct or array initialization),
-    ;; though not in the case of a function definition.
+    ;; though not in the case of a function definition.  Try to
+    ;; consume a semicolon before bailing out just because of a close
+    ;; brace.
     (when (= (char-before) ?})
       (let ((semi (save-excursion
                     (c-forward-syntactic-ws)
                     (when (= (char-after) ?\;)
                       (1+ (point))))))
         (when semi (goto-char semi))))))
+
+;; XXX It might be possible to be more lax in parsing to allow for
+;; other tokens to appear in the declaration specifier list (for
+;; example, macro calls) by taking advantage of the fact that
+;; functions returning functions are semantically disallowed.  Without
+;; this, "w x (y)(z)" could be either a function called x that returns
+;; a function, or a function called y where x is some unrecognized
+;; token.
+;;
+;; Unfortunately, this approach blurs the boundary between the
+;; declaration specifier list and the declarator and also complicates
+;; reading of type qualifiers in a pointer declarator.  It might help
+;; if read-declspec consumes tokens more liberally (ie, up to a star
+;; or paren) and returns the last token consumed, or maybe both the
+;; parse including the last token and excluding the last token.
 
 (defun auto-proto-read-declaration ()
   ;; Set up the parse.  Change "_" to be a word character, since it's
@@ -289,8 +316,7 @@
 (defun auto-proto-summarize ()
   (c-save-buffer-state
       ((progress (make-progress-reporter
-                  (format "Scanning declarations in %s... "
-                          (file-name-nondirectory (buffer-file-name)))
+                  (format "Scanning declarations in %s... " (buffer-name))
                   (point-min) (point-max)))
        decls)
     (save-excursion
@@ -362,6 +388,7 @@
                         (auto-proto-error-decl
                          decl
                          "This function doesn't have a name")))
+         (decl-storage (auto-proto-decl-storage decl))
          (file-summ (auto-proto-summarize))
          (file-protos (remove-if-not
                        (lambda (decl)
@@ -380,8 +407,8 @@
         (auto-proto-highlight-decl in-file)
         ;; If the prototype is static and the declaration isn't
         ;; already static, make the new prototype static
-        (when (and (eq (auto-proto-decl-storage in-file) 'static)
-                   (not (eq (auto-proto-decl-storage decl) 'static)))
+        (when (and (memq 'static (auto-proto-decl-storage in-file))
+                   (not (memq 'static decl-storage)))
           (setq text (concat "static " text)))
         ;; Prompt
         (when (y-or-n-p (format "Replace prototype with\n %s;\n? " text))
@@ -390,8 +417,62 @@
           (goto-char (car extents))
           (insert text))))
      (t
-      ;; XXX Figure out where to put the prototype
-      ))))
+      (let ((protos
+             ;; Should the prototype be in this file or in the header?
+             ;; If it's static or inline, it should always be in the
+             ;; file.  Otherwise, ask.
+             (if (or (memq 'static decl-storage)
+                     (memq 'inline decl-storage))
+                 file-proto-names
+               ;; XXX
+               file-proto-names))
+            ;; Figure out the function's surrounding context
+            (pre-context
+             (nreverse
+              (remove-if-not
+               (lambda (decl)
+                 (and (eq (car (auto-proto-decl-type decl)) 'fn)
+                      (auto-proto-decl-has-body decl)))
+               file-summ)))
+            (post-context nil)
+            (decl-start (car (auto-proto-decl-extents decl))))
+        ;; Roll pre-context on to post-context until pre-context is a
+        ;; list of declarations preceding decl, starting with the one
+        ;; immediately preceding it and post-context is a list of
+        ;; declarations following decl, starting with the one
+        ;; immediately following it.  The context, in priority order,
+        ;; is then the concatenation of these
+        (while (and pre-context
+                    (> (car (auto-proto-decl-extents (car pre-context)))
+                       decl-start))
+          (setq post-context (cons (car pre-context) post-context))
+          (setq pre-context  (cdr pre-context)))
+        (when (and pre-context
+                   (= (car (auto-proto-decl-extents (car pre-context)))
+                      decl-start))
+          (setq pre-context (cdr pre-context)))
+        ;; Search for the context in the prototypes
+        ;; XXX This can be easily misguided.  Perhaps it should be
+        ;; based on voting.  Each context entry can vote (before x) or
+        ;; (after x) and the mechanism to place it after structs and
+        ;; before global variables or function definitions can also
+        ;; weigh in.
+        ;; XXX This should probably be broken out in case users want
+        ;; to reprogram it.
+        (catch 'done
+          (dolist (c pre-context)
+            (let ((proto (cdr (assoc (auto-proto-decl-name c) protos))))
+              (when proto
+                (goto-char (cdr (auto-proto-decl-extents proto)))
+                (auto-proto-end-of-statement)
+                (while (forward-comment 1) t)
+                (throw 'done
+                       (concat (if (bolp) "" "\n")
+                               text
+                               ";\n"))))))
+        (sit-for 2)
+        ;; XXX Figure out where to put the prototype
+      )))))
 
 ;; For a function definition, insert or update prototype in file
 ;; prologue or header.  Offer to make it static if it is not already
