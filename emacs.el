@@ -50,6 +50,8 @@
 
 ;; Set appropriate load-path
 (defun atc:add-to-load-path-maybe (path msg append fatal)
+  (if (and (string-match "^~/" path) init-file-user)
+      (setq path (concat "~" init-file-user (substring path 1))))
   (if (not (file-accessible-directory-p path))
       (if fatal
           (error msg)
