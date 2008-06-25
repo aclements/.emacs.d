@@ -423,9 +423,9 @@
              ;; file.  Otherwise, ask.
              (if (or (memq 'static decl-storage)
                      (memq 'inline decl-storage))
-                 file-proto-names
+                 file-summ
                ;; XXX
-               file-proto-names))
+               file-summ))
             ;; Figure out the function's surrounding context
             (pre-context
              (nreverse
@@ -452,27 +452,38 @@
                       decl-start))
           (setq pre-context (cdr pre-context)))
         ;; Search for the context in the prototypes
-        ;; XXX This can be easily misguided.  Perhaps it should be
-        ;; based on voting.  Each context entry can vote (before x) or
-        ;; (after x) and the mechanism to place it after structs and
-        ;; before global variables or function definitions can also
-        ;; weigh in.
-        ;; XXX This should probably be broken out in case users want
-        ;; to reprogram it.
-        (catch 'done
-          (dolist (c pre-context)
-            (let ((proto (cdr (assoc (auto-proto-decl-name c) protos))))
-              (when proto
-                (goto-char (cdr (auto-proto-decl-extents proto)))
-                (auto-proto-end-of-statement)
-                (while (forward-comment 1) t)
-                (throw 'done
-                       (concat (if (bolp) "" "\n")
-                               text
-                               ";\n"))))))
+        (auto-proto-compute-insertion decl pre-context post-context protos)
         (sit-for 2)
         ;; XXX Figure out where to put the prototype
       )))))
+
+(defun auto-proto-compute-insertion (decl pre-context post-context dest-decls)
+  "Return the point where the prototype of decl should be inserted.
+
+DECL is the declaration for which a prototype is being generated.
+PRE-CONTEXT is a list of declarations preceding DECL, starting
+with the one immediately preceding DECL.  POST-CONTEXT is a list
+of declarations following DECL, starting with the one immediately
+following DECL.  DEST-DECLS is the list of declarations in the
+file that the prototype is being inserted into.  The returned
+point should be in the context of DEST-DECLS."
+
+  ;; XXX This can be easily misguided.  Perhaps it should be based on
+  ;; voting.  Each context entry can vote (before x) or (after x) and
+  ;; the mechanism to place it after structs and before global
+  ;; variables or function definitions can also weigh in.
+  (catch 'done
+    (let ((protos (auto-proto-name-alist dest-decls)))
+    (dolist (c pre-context)
+      (let ((proto (cdr (assoc (auto-proto-decl-name c) protos))))
+        (when proto
+          (goto-char (cdr (auto-proto-decl-extents proto)))
+          (auto-proto-end-of-statement)
+          (while (forward-comment 1) t)
+          (throw 'done
+                 (concat (if (bolp) "" "\n")
+                         text
+                         ";\n"))))))))
 
 ;; For a function definition, insert or update prototype in file
 ;; prologue or header.  Offer to make it static if it is not already
