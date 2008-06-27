@@ -305,13 +305,26 @@
   (let* ((decl (auto-proto-read-declaration))
          (extents (auto-proto-decl-extents decl)))
     (when decl
-      (list
-       (replace-regexp-in-string
-        "\\(^[ \t]*\\)\\|\\([ \t]*$\\)" ""
-        (replace-regexp-in-string
-         "[ \t]*\n[ \t]*" " "
-         (buffer-substring (car extents) (cdr extents))))
-       decl))))
+      (let ((str (buffer-substring (car extents) (cdr extents))))
+        (with-temp-buffer
+          (c-mode)
+          (insert str)
+          (goto-char (point-min))
+          ;; Replace all syntactic whitespace with a single space.
+          ;; XXX This is not intelligent about strings.
+          (delete-horizontal-space)
+          (while (not (eobp))
+            (when (looking-at "[^ \t\n/]+")
+              (goto-char (match-end 0)))
+            (let ((start (point)))
+              (c-forward-syntactic-ws)
+              (cond ((/= start (point))
+                     (delete-region start (point))
+                     (insert " "))
+                    ((not (eobp))
+                     (forward-char)))))
+          (delete-horizontal-space)
+          (buffer-substring (point-min) (point-max)))))))
 
 (defun auto-proto-summarize ()
   (c-save-buffer-state
@@ -455,6 +468,8 @@
         (auto-proto-compute-insertion decl pre-context post-context protos)
         (sit-for 2)
         ;; XXX Figure out where to put the prototype
+        ;; XXX Other options: k to put prototype in kill ring and to
+        ;; push the original point
       )))))
 
 (defun auto-proto-compute-insertion (decl pre-context post-context dest-decls)
