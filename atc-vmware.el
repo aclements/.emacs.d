@@ -34,4 +34,40 @@
             (force-mode-line-update))
           (sit-for 2)
           (set-window-configuration config)))))
+
+  ;; Generate function headers
+  (defun vmware-function-header ()
+    (interactive)
+
+    (push-mark)
+    (c-beginning-of-defun)
+    (unless (bolp)
+      (error "Confused; not at beginning of line"))
+    (let ((beginning (point)))
+      (forward-line)
+      ;; This way oversimplifies things, but should work 99% of the time
+      (unless (looking-at "\\([a-zA-Z_][a-zA-Z0-9_$]*\\)(")
+        (error "Confused; doesn't look like a function name"))
+      (let ((name (match-string 1)))
+        (goto-char beginning)
+        (insert "/*
+ *-----------------------------------------------------------------------------
+ *
+ * " name " --
+ *
+ *      ")
+        (let ((middle (point)))
+          (insert "XXX
+ *
+ * Results:
+ *      XXX
+ *
+ * Side effects:
+ *      XXX
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+")
+          (goto-char middle)))))
   )
