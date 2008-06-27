@@ -324,7 +324,7 @@
                     ((not (eobp))
                      (forward-char)))))
           (delete-horizontal-space)
-          (buffer-substring (point-min) (point-max)))))))
+          (list (buffer-substring (point-min) (point-max)) decl))))))
 
 (defun auto-proto-summarize ()
   (c-save-buffer-state
@@ -466,7 +466,6 @@
           (setq pre-context (cdr pre-context)))
         ;; Search for the context in the prototypes
         (auto-proto-compute-insertion decl pre-context post-context protos)
-        (sit-for 2)
         ;; XXX Figure out where to put the prototype
         ;; XXX Other options: k to put prototype in kill ring and to
         ;; push the original point
@@ -476,29 +475,51 @@
   "Return the point where the prototype of decl should be inserted.
 
 DECL is the declaration for which a prototype is being generated.
-PRE-CONTEXT is a list of declarations preceding DECL, starting
-with the one immediately preceding DECL.  POST-CONTEXT is a list
-of declarations following DECL, starting with the one immediately
-following DECL.  DEST-DECLS is the list of declarations in the
-file that the prototype is being inserted into.  The returned
-point should be in the context of DEST-DECLS."
+PRE-CONTEXT is a list of function definitions preceding DECL,
+starting with the one immediately preceding DECL.  POST-CONTEXT
+is a list of function definitions following DECL, starting with
+the one immediately following DECL.  DEST-DECLS is the list of
+declarations in the file that the prototype is being inserted
+into.  The returned point should be in the context of
+DEST-DECLS."
+
+  ;; XXX Filter function definitions out of protos
+  (let* ((non-fn-protos (remove-if
+                         (lambda (decl)
+                           (and (eq (car (auto-proto-decl-type decl)) 'fn)
+                                (auto-proto-decl-has-body decl)))
+                         dest-decls))
+         (protos (auto-proto-name-alist non-fn-protos))
+         votes)
+    (dolist (pre pre-context)
+      (let ((proto (cdr (assoc (auto-proto-decl-name pre) protos))))
+        (when proto
+          ;; XXX The end extent isn't really what I want.  What I want
+          ;; is the point after the semicolon
+          (push (cons 'after (cdr (auto-proto-decl-extents proto))) votes))))
+    (dolist (post post-context)
+      (let ((proto (cdr (assoc (auto-proto-decl-name post) protos))))
+        (when proto
+          (push (cons 'before (car (auto-proto-decl-extents proto))) votes))))
+    votes))
+    
 
   ;; XXX This can be easily misguided.  Perhaps it should be based on
   ;; voting.  Each context entry can vote (before x) or (after x) and
   ;; the mechanism to place it after structs and before global
   ;; variables or function definitions can also weigh in.
-  (catch 'done
-    (let ((protos (auto-proto-name-alist dest-decls)))
-    (dolist (c pre-context)
-      (let ((proto (cdr (assoc (auto-proto-decl-name c) protos))))
-        (when proto
-          (goto-char (cdr (auto-proto-decl-extents proto)))
-          (auto-proto-end-of-statement)
-          (while (forward-comment 1) t)
-          (throw 'done
-                 (concat (if (bolp) "" "\n")
-                         text
-                         ";\n"))))))))
+  ;; (catch 'done
+  ;;   (let ((protos (auto-proto-name-alist dest-decls)))
+  ;;   (dolist (c pre-context)
+  ;;     (let ((proto (cdr (assoc (auto-proto-decl-name c) protos))))
+  ;;       (when proto
+  ;;         (goto-char (cdr (auto-proto-decl-extents proto)))
+  ;;         (auto-proto-end-of-statement)
+  ;;         (while (forward-comment 1) t)
+  ;;         (throw 'done
+  ;;                (concat (if (bolp) "" "\n")
+  ;;                        text
+  ;;                        ";\n"))))))))
 
 ;; For a function definition, insert or update prototype in file
 ;; prologue or header.  Offer to make it static if it is not already
