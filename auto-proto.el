@@ -21,13 +21,13 @@
          (goto-char ,start))
        ,result)))
 
-;; XXX This is goofy.  The c-forward-syntactic-ws should happen first,
-;; but this requires a number of changes.
 (defun auto-proto-read-token (&rest tokens)
   (when (looking-at (regexp-opt tokens 'words))
     (goto-char (match-end 0))
     (prog1
         (intern (match-string 0))
+      ;; We skip syntactic whitespace after the fact so that we don't
+      ;; have to skip backwards over it if we fail to read the token
       (c-forward-syntactic-ws))))
 
 (defun auto-proto-read-symbol (&rest symbols)
@@ -45,6 +45,10 @@
 
 (defun auto-proto-read-basic-declspec (storage)
   ;; Any declaration specifier other than a type specifier (6.7)
+  ;;
+  ;; If this is storage specifier, prepends the storage specifier to
+  ;; the list kept in the car of STORAGE and returns t.  The t's will
+  ;; later be filtered out of the declaration specifier list.
   (let (tmp)
     (cond ((setq tmp (auto-proto-read-token
                       ;; Storage-class specifier (6.7.1)
@@ -194,28 +198,31 @@
 
   ;; If we're already at the end of a statement, start moving to the
   ;; next.
-  (when (or (= (char-before) ?\;) (= (char-before) ?}))
-    (unless (eobp)
-      (forward-char)))
-  (while (and (/= (char-before) ?\;)
-              (/= (char-before) ?})
-              (or (c-syntactic-re-search-forward "[[{(;]" nil t)
-                  (progn (goto-char (point-max)) nil)))
-    ;; If we hit a bracket, brace, or paren, skip to the other side.
-    (when (/= (char-before) ?\;)
-      (backward-char)
-      (forward-list))
-    ;; A close brace will be followed by a semicolon in the case of a
-    ;; declaration (for example, struct or array initialization),
-    ;; though not in the case of a function definition.  Try to
-    ;; consume a semicolon before bailing out just because of a close
-    ;; brace.
-    (when (= (char-before) ?})
-      (let ((semi (save-excursion
-                    (c-forward-syntactic-ws)
-                    (when (= (char-after) ?\;)
-                      (1+ (point))))))
-        (when semi (goto-char semi))))))
+  (cond ((bobp)
+         (forward-char))
+        ((or (= (char-before) ?\;) (= (char-before) ?}))
+         (unless (eobp)
+           (forward-char))))
+  (unless (eobp)
+    (while (and (/= (char-before) ?\;)
+                (/= (char-before) ?})
+                (or (c-syntactic-re-search-forward "[[{(;]" nil t)
+                    (progn (goto-char (point-max)) nil)))
+      ;; If we hit a bracket, brace, or paren, skip to the other side.
+      (when (/= (char-before) ?\;)
+        (backward-char)
+        (forward-list))
+      ;; A close brace will be followed by a semicolon in the case of a
+      ;; declaration (for example, struct or array initialization),
+      ;; though not in the case of a function definition.  Try to
+      ;; consume a semicolon before bailing out just because of a close
+      ;; brace.
+      (when (= (char-before) ?})
+        (let ((semi (save-excursion
+                      (c-forward-syntactic-ws)
+                      (when (= (char-after) ?\;)
+                        (1+ (point))))))
+          (when semi (goto-char semi)))))))
 
 ;; XXX It might be possible to be more lax in parsing to allow for
 ;; other tokens to appear in the declaration specifier list (for
@@ -272,18 +279,21 @@
                       (goto-char end)
                       (c-forward-syntactic-ws)
                       (forward-list)))
-               ;; Construct the return value
-               (if declarator
-                   ;; Fill the declarator hole with the declaration
-                   ;; specifier list.
-                   (let ((decor (first declarator))
-                         (hole (second declarator))
-                         (name (third declarator)))
-                     (if decor
-                         (setcar hole declspec)
-                       (setq decor declspec))
-                     (list decor storage name has-body start end))
-                 (list declspec storage nil nil start end))))))))))
+               (let ((after (save-excursion
+                              (c-backward-syntactic-ws)
+                              (point-marker))))
+                 ;; Construct the return value
+                 (if declarator
+                     ;; Fill the declarator hole with the declaration
+                     ;; specifier list.
+                     (let ((decor (first declarator))
+                           (hole (second declarator))
+                           (name (third declarator)))
+                       (if decor
+                           (setcar hole declspec)
+                         (setq decor declspec))
+                       (list decor storage name has-body start end after))
+                   (list declspec storage nil nil start end after)))))))))))
 
 (defun auto-proto-decl-type (decl)
   (first decl))
@@ -299,6 +309,25 @@
 
 (defun auto-proto-decl-extents (decl)
   (cons (fifth decl) (sixth decl)))
+
+(defun auto-proto-decl-after (decl)
+  (seventh decl))
+
+(defun auto-proto-decl-is-typedef (decl)
+  (memq 'typedef (auto-proto-decl-storage decl)))
+
+(defun auto-proto-decl-is-tag (decl)
+  (and (null (auto-proto-decl-name decl))
+       (memq (car-safe (car (auto-proto-decl-type decl)))
+             '(struct union enum))))
+
+(defun auto-proto-decl-is-fndef (decl)
+  (and (eq (car (auto-proto-decl-type decl)) 'fn)
+       (auto-proto-decl-has-body decl)))
+
+(defun auto-proto-decl-is-fnproto (decl)
+  (and (eq (car (auto-proto-decl-type decl)) 'fn)
+       (not (auto-proto-decl-has-body decl))))
 
 (defun auto-proto-get-proto ()
   ;; Point must be at the beginning of the function declaration
@@ -403,11 +432,7 @@
                          "This function doesn't have a name")))
          (decl-storage (auto-proto-decl-storage decl))
          (file-summ (auto-proto-summarize))
-         (file-protos (remove-if-not
-                       (lambda (decl)
-                         (and (eq (car (auto-proto-decl-type decl)) 'fn)
-                              (not (auto-proto-decl-has-body decl))))
-                       file-summ))
+         (file-protos (remove-if-not #'auto-proto-decl-is-fnproto file-summ))
          (file-proto-names (auto-proto-name-alist file-protos))
          ;; XXX Header file
          (in-file (cdr (assoc decl-name file-proto-names)))
@@ -442,11 +467,7 @@
             ;; Figure out the function's surrounding context
             (pre-context
              (nreverse
-              (remove-if-not
-               (lambda (decl)
-                 (and (eq (car (auto-proto-decl-type decl)) 'fn)
-                      (auto-proto-decl-has-body decl)))
-               file-summ)))
+              (remove-if-not #'auto-proto-decl-is-fndef file-summ)))
             (post-context nil)
             (decl-start (car (auto-proto-decl-extents decl))))
         ;; Roll pre-context on to post-context until pre-context is a
@@ -464,15 +485,40 @@
                    (= (car (auto-proto-decl-extents (car pre-context)))
                       decl-start))
           (setq pre-context (cdr pre-context)))
-        ;; Search for the context in the prototypes
-        (auto-proto-compute-insertion decl pre-context post-context protos)
-        ;; XXX Figure out where to put the prototype
-        ;; XXX Other options: k to put prototype in kill ring and to
-        ;; push the original point
-      )))))
+        ;; Compute the insertion point
+        (message "Finding prototype insertion point...")
+        (let* ((insertion
+                (auto-proto-compute-insertion decl pre-context post-context
+                                              protos))
+               (where (first insertion))
+               (pre (second insertion))
+               (post (third insertion)))
+          (setq text (concat pre text ";" post))
+          ;; Prompt to insert the prototype
+          (goto-char where)
+          (when (let ((ov (make-overlay where (1+ where))))
+                  (unwind-protect
+                      (progn
+                        (overlay-put ov 'before-string text)
+                        ;; XXX
+                        (overlay-put ov 'face
+                                     '((:background "midnight blue")))
+                        ;; XXX Other options: k to put prototype in
+                        ;; kill ring and to push the original point
+                        (y-or-n-p "Insert prototype? "))
+                    (delete-overlay ov)))
+            (insert text))))))))
 
 (defun auto-proto-compute-insertion (decl pre-context post-context dest-decls)
-  "Return the point where the prototype of decl should be inserted.
+  "Return a triple indicating where and how to insert the prototype of decl.
+
+The triple should be of the form
+
+  (POINT BEFORE-STRING AFTER-STRING)
+
+where POINT indicates the where in the buffer to insert the
+prototype and BEFORE-STRING and AFTER-STRING indicate strings to
+be inserted before and after the prototype, respectively.
 
 DECL is the declaration for which a prototype is being generated.
 PRE-CONTEXT is a list of function definitions preceding DECL,
@@ -481,28 +527,111 @@ is a list of function definitions following DECL, starting with
 the one immediately following DECL.  DEST-DECLS is the list of
 declarations in the file that the prototype is being inserted
 into.  The returned point should be in the context of
-DEST-DECLS."
+DEST-DECLS.
 
-  ;; XXX Filter function definitions out of protos
-  (let* ((non-fn-protos (remove-if
-                         (lambda (decl)
-                           (and (eq (car (auto-proto-decl-type decl)) 'fn)
-                                (auto-proto-decl-has-body decl)))
-                         dest-decls))
-         (protos (auto-proto-name-alist non-fn-protos))
-         votes)
-    (dolist (pre pre-context)
-      (let ((proto (cdr (assoc (auto-proto-decl-name pre) protos))))
-        (when proto
-          ;; XXX The end extent isn't really what I want.  What I want
-          ;; is the point after the semicolon
-          (push (cons 'after (cdr (auto-proto-decl-extents proto))) votes))))
-    (dolist (post post-context)
-      (let ((proto (cdr (assoc (auto-proto-decl-name post) protos))))
-        (when proto
-          (push (cons 'before (car (auto-proto-decl-extents proto))) votes))))
+The current buffer will be the buffer destined to contain the
+prototype."
+
+  (let* ((votes (auto-proto-compute-insertion-votes
+                 decl pre-context post-context dest-decls))
+         (where (or (auto-proto-compute-vote votes)
+                    (point-min))))
+    ;; Deal with whitespace
+    ;;
+    ;; XXX Insert an extra blank if this is not preceded by a function
+    ;; prototype.  Don't insert a following blank if the following
+    ;; line is already blank.
+    (save-excursion
+      (goto-char where)
+      (cond ((bolp)
+             (list where "" "\n"))
+            ((looking-at "[ \t]*$")
+             (list (match-end 0) "\n" ""))
+            (t
+             (while (forward-comment 1) t)
+             (skip-chars-backward " \t\n")
+             (skip-chars-forward " \t")
+             (list (point) "\n" "\n"))))))
+
+(defvar auto-proto-neighbor-weight 1)
+(defvar auto-proto-neighbor-falloff 0.8)
+(defvar auto-proto-before-fn-weight 1)
+(defvar auto-proto-after-type-weight 1)
+
+(defun auto-proto-compute-insertion-votes (decl pre-context post-context
+                                                dest-decls)
+  (let (votes)
+    ;; Compute votes based on the locations of other function prototypes
+    (let ((protos (auto-proto-name-alist
+                   ;; Filter down dest-decls to just function prototypes
+                   (remove-if-not #'auto-proto-decl-is-fnproto dest-decls))))
+      ;; Pre-context
+      (let ((weight auto-proto-neighbor-weight))
+        (dolist (pre pre-context)
+          (let ((proto (cdr (assoc (auto-proto-decl-name pre) protos))))
+            (when proto
+              (push (list 'after (auto-proto-decl-after proto) weight)
+                    votes)))
+          (setq weight (* weight auto-proto-neighbor-falloff))))
+      ;; Post-context
+      (let ((weight auto-proto-neighbor-weight))
+        (dolist (post post-context)
+          (let ((proto (cdr (assoc (auto-proto-decl-name post) protos))))
+            (when proto
+              (push (list 'before (car (auto-proto-decl-extents proto)) weight)
+                    votes)))
+          (setq weight (* weight auto-proto-neighbor-falloff)))))
+
+    ;; Prototypes should come after leading pre-processor goo.  Note
+    ;; that the weight of this doesn't actually matter because nothing
+    ;; else we're considering could possibly appear before this vote.
+    (save-excursion
+      (goto-char (point-min))
+      (c-forward-syntactic-ws)
+      (push (list 'after (point) 1) votes))
+
+    ;; Prototypes should come after typedef's and struct's
+    (let ((types (remove-if-not
+                  (lambda (decl)
+                    (or (auto-proto-decl-is-typedef decl)
+                        (auto-proto-decl-is-tag decl)))
+                  dest-decls)))
+      (dolist (type types)
+        (push (list 'after (auto-proto-decl-after type)
+                    auto-proto-after-type-weight)
+              votes)))
+
+    ;; Prototypes should come before functions
+    (let ((fns (remove-if-not #'auto-proto-decl-is-fndef dest-decls)))
+      (dolist (fn fns)
+        (push (list 'before (car (auto-proto-decl-extents fn))
+                    auto-proto-before-fn-weight)
+              votes)))
+
     votes))
-    
+
+(defun auto-proto-compute-vote (votes)
+  (when votes
+    (setq votes (sort votes (lambda (v1 v2) (< (second v1) (second v2)))))
+    ;; Ensure votes doesn't start with a before vote.  This eliminates
+    ;; a lot of corner cases below.
+    (setq votes (cons '(after 1 0) votes))
+    (let ((tally 0)
+          (best-tally -1.0e+INF)
+          (best-value 0))
+      (dolist (v votes)
+        (let ((point (second v))
+              (weight (third v)))
+          (case (first v)
+            ((after)
+             (setq tally (+ tally weight))
+             (when (> tally best-tally)
+               (setq best-tally tally)
+               (setq best-value point)))
+            ((before)
+             (setq tally (- tally weight)))
+            (t (error "Unknown vote %s" v)))))
+      best-value)))
 
   ;; XXX This can be easily misguided.  Perhaps it should be based on
   ;; voting.  Each context entry can vote (before x) or (after x) and
