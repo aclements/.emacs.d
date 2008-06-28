@@ -72,7 +72,8 @@
 ")
           (goto-char middle)))))
 
-  (define-key c-mode-map "\C-ci" #'vmware-function-header)
+  (eval-after-load 'cc-mode
+    '(define-key c-mode-map "\C-ci" #'vmware-function-header))
 
   (defvar vmware-function-header-begin-re "/\\*\n \\*--")
   (defvar vmware-function-header-continuation-re "^[ \t]*\\*?[ \t]*$")
