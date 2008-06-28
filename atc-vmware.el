@@ -1,4 +1,4 @@
-(when (string-match "^/mts/home[0-9]/" (getenv "HOME"))
+(when (string-match "^/\\(mts.*\\|exit[0-9]*\\)/home[0-9]?/" (getenv "HOME"))
   ;; SCons scripts
   (add-to-list 'auto-mode-alist (cons "\\.sc\\'" (function python-mode)))
 
