@@ -42,12 +42,13 @@
     (push-mark)
     (c-beginning-of-defun)
     (unless (bolp)
-      (error "Confused; not at beginning of line"))
+      (error "Declaration does not start at the beginning of a line"))
     (let ((beginning (point)))
       (forward-line)
-      ;; This way oversimplifies things, but should work 99% of the time
+      ;; This way oversimplifies things, but should work 99% of the
+      ;; time and should generally bail when it would be wrong.
       (unless (looking-at "\\([a-zA-Z_][a-zA-Z0-9_$]*\\)(")
-        (error "Confused; doesn't look like a function name"))
+        (error "This doesn't look like a function name"))
       (let ((name (match-string 1)))
         (goto-char beginning)
         (insert "/*
@@ -70,4 +71,51 @@
 
 ")
           (goto-char middle)))))
+
+  (define-key c-mode-map "\C-ci" #'vmware-function-header)
+
+  (defvar vmware-function-header-begin-re "/\\*\n \\*--")
+  (defvar vmware-function-header-continuation-re "^[ \t]*\\*?[ \t]*$")
+  (defvar vmware-function-header-section-re
+    "^[ \t]*\\*\\(-\\| [^ ].*\\(--\\|:\\)[ \t]*$\\)")
+
+  (defvar vmware-function-header-default-indent " *      ")
+
+  (defun vmware-compute-comment-indent ()
+    (let (range)
+      (when (c-save-buffer-state
+                ()
+              (setq range (c-literal-limits))
+              (when range
+                (save-excursion
+                  (goto-char (car range))
+                  (looking-at vmware-function-header-begin-re))))
+        ;; We are.  Go backwards until we find another line of text
+        (save-excursion
+          (beginning-of-line)
+          (forward-line -1)
+          (while (looking-at vmware-function-header-continuation-re)
+            (forward-line -1))
+          ;; What did we hit?
+          (when (or (looking-at "^/\\*")
+                    (looking-at vmware-function-header-section-re))
+            ;; We hit the beginning of the comment or a section
+            ;; within the comment.  Find the first real line of text.
+            (goto-char (car range))
+            (forward-line)
+            (beginning-of-line)
+            (while (or (looking-at vmware-function-header-continuation-re)
+                       (looking-at vmware-function-header-section-re))
+              (forward-line)))
+          ;; Take our indentation from this line
+          (if (looking-at "^[ \t]*\\*?[ \t]*")
+              (match-string 0)
+            vmware-function-header-default-indent)))))
+
+  (defadvice c-indent-line (around indent-in-function-header activate)
+    (or (let ((indent (vmware-compute-comment-indent)))
+          (when indent
+            (insert indent)
+            (length indent)))
+        ad-do-it))
   )
