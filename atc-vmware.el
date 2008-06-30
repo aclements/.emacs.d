@@ -72,9 +72,6 @@
 ")
           (goto-char middle)))))
 
-  (eval-after-load 'cc-mode
-    '(define-key c-mode-map "\C-ci" #'vmware-function-header))
-
   (defvar vmware-function-header-begin-re "/\\*\n \\*--")
   (defvar vmware-function-header-continuation-re "^[ \t]*\\*?[ \t]*$")
   (defvar vmware-function-header-section-re
@@ -119,4 +116,99 @@
             (insert indent)
             (length indent)))
         ad-do-it))
+
+  ;; Generate header file headers
+  (defun vmware-header-header ()
+    (interactive)
+
+    (push-mark)
+
+    (goto-char
+     (save-excursion
+       (let ((middle (vmware-file-header))
+             (restriction-sym (concat
+                               "_"
+                               (upcase
+                                (replace-regexp-in-string
+                                 "\\." "_"
+                                 (file-name-nondirectory (buffer-file-name))))
+                               "_")))
+         (insert "#ifndef " restriction-sym "\n"
+                 "#define " restriction-sym "\n"
+                 "\n"
+                 "#define INCLUDE_ALLOW_XXX\n"
+                 "#include \"includeCheck.h\"\n"
+                 "\n")
+         (goto-char (point-max))
+         (unless (bolp)
+           (insert "\n"))
+         (insert "\n#endif // ifndef " restriction-sym "\n")
+
+         middle))))
+
+  (defun vmware-source-header ()
+    (interactive)
+
+    (push-mark)
+
+    (goto-char (save-excursion (vmware-file-header))))
+
+  (defun vmware-file-header ()
+    (goto-char (point-min))
+    (let ((comment-end (save-excursion
+                         (while (forward-comment 1) t)
+                         (point))))
+      (when (re-search-forward "Copyright [0-9]+ VMware" comment-end t)
+        (error "This file appears to have a header comment already")))
+
+    ;; Copyright
+    (let ((year (number-to-string (nth 5 (decode-time)))))
+      (insert "/* **********************************************************
+ * Copyright " year " VMware, Inc.  All rights reserved.
+ * VMware Confidential
+ * **********************************************************/
+
+"))
+
+    ;; Abstract
+    (insert "/*
+ * " (file-name-nondirectory (buffer-file-name)) " --
+ *
+ *      ")
+    (prog1
+        (point)
+      (insert "XXX
+ */
+
+")))
+
+  (defun vmware-header-dwim ()
+    (interactive)
+
+    (cond ((save-excursion
+             (unless (eobp)
+               (forward-char))
+             (c-beginning-of-defun)
+             (not (bobp)))
+           (vmware-function-header))
+          ((string-match "\\.c$" (buffer-file-name))
+           (vmware-source-header))
+          ((string-match "\\.h$" (buffer-file-name))
+           (vmware-header-header))
+          (t
+           (message "Couldn't determine header type.  Insert header?  [fch?]")
+           (let (done)
+             (while (not done)
+               (let ((key (read-event)))
+                 (setq done t)
+                 (case key
+                   ((?f ?F) (vmware-function-header))
+                   ((?c ?C) (vmware-source-header))
+                   ((?h ?H) (vmware-header-header))
+                   ((??)
+                    (message "Header type: (f) Function, (c) Source file, (h) Header file")
+                    (setq done nil)))))))))
+
+  (eval-after-load 'cc-mode
+    '(define-key c-mode-map "\C-ci" #'vmware-header-dwim))
   )
