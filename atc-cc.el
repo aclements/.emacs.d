@@ -63,14 +63,6 @@ block."
         tab-width 4
         indent-tabs-mode nil))
 
-(defun vmware-style ()
-  (c-set-style "k&r")
-  ;; 89-character limit.  Apparently only some of the company uses
-  ;; this.  Instead, use the common denominator 79.
-  ;;(set (make-local-variable 'fill-column) 89)
-  (set (make-local-variable 'fill-column) 79)
-  (set (make-local-variable 'c-basic-offset) 3))
-
 (defun cc-fix-slash-paren ()
   "Fix paren balancing where the open paren appears to be escaped.
 This is not valid syntax in C, but can be in C-like languages."
@@ -117,9 +109,10 @@ This is not valid syntax in C, but can be in C-like languages."
           ((string-match ".streambase.com$" hostname)
            (message "Setting style for StreamBase")
            (streambase-style))
-          ((string-match "/bora/" filename)
+          ((and (functionp 'vmstyle-set-c-style)
+                (string-match "/bora/" filename))
            (message "Setting style for VMware")
-           (vmware-style)))))
+           (vmstyle-set-c-style)))))
 ;; Don't decompress .z files
 (mapcar
  (lambda (a)
