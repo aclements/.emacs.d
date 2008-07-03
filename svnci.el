@@ -669,8 +669,11 @@ PREVIEW controls whether or not this is actually a dry-run.  See
     (write-region (point-min) message-end message-file nil 0)
 
     ;; Create commit buffer
-    (let ((original-file buffer-file-name))
+    (let ((original-file buffer-file-name)
+          (directory default-directory))
       (pop-to-buffer "*svn commit*")
+      ;; Make sure svn is run from the right directory
+      (setq default-directory directory)
       (erase-buffer)
 
       ;; Construct a plist of information that the commit process will
