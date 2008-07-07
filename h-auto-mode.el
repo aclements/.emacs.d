@@ -31,7 +31,8 @@
   :group 'c)
 
 (defcustom h-auto-mode-exts
-  '(("c" c-mode) ("cc" c++-mode) ("C" c++-mode) ("c++" c++-mode))
+  '(("c" c-mode)
+    ("cc" c++-mode) ("C" c++-mode) ("c++" c++-mode) ("cpp" c++-mode))
   "Association list mapping extensions to C major modes.
 
 h-auto-mode searches for related files in the same directory as a
