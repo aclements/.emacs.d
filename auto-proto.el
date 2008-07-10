@@ -460,6 +460,9 @@
 (defvar auto-proto-buffer-search-path '())
 (make-variable-buffer-local 'auto-proto-buffer-search-path)
 
+(defconst auto-proto-include-regexp
+  "^[ \t]*#[ \t]*include[ \t]*\"\\([^\"]+\\)\"[ \t]*\\(?:$\\|//\\|/\\*\\)")
+
 (defun auto-proto-default-search-path (decl)
   ;; If this function is static or inline, it should always be local
   ;; to the function
@@ -474,7 +477,7 @@
      (save-excursion
        (goto-char (point-min))
        (let (files)
-         (while (re-search-forward "^#include[ \t]+\"\\([^\"]+\\)\"[ \t]*$" nil t)
+         (while (re-search-forward auto-proto-include-regexp nil t)
            (push (match-string 1) files))
          (reverse files)))
      ;; XXX Then user hooks
