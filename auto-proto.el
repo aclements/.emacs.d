@@ -329,6 +329,12 @@
   (and (eq (car (auto-proto-decl-type decl)) 'fn)
        (not (auto-proto-decl-has-body decl))))
 
+(defun auto-proto-decl-is-file-scope (decl)
+  (let ((decl-storage (auto-proto-decl-storage decl)))
+    (or (memq 'static decl-storage)
+        (memq 'inline decl-storage))))
+
+
 (defun auto-proto-get-proto ()
   ;; Point must be at the beginning of the function declaration
   (let* ((decl (auto-proto-read-declaration))
@@ -392,24 +398,25 @@
 (defun auto-proto ()
   (interactive)
   (save-excursion
-    ;; Get this declaration
-    (c-beginning-of-defun)
-    (let* ((proto (or (auto-proto-get-proto)
-                      (error "Error getting declaration at point")))
-           (this-text (first proto))
-           (this-decl (second proto)))
-      (cond ((eq (car (auto-proto-decl-type this-decl)) 'fn)
-             ;; Insert or update function prototype
-             (unless (auto-proto-decl-has-body this-decl)
+    (save-window-excursion
+      ;; Get this declaration
+      (c-beginning-of-defun)
+      (let* ((proto (or (auto-proto-get-proto)
+                        (error "Error getting declaration at point")))
+             (this-text (first proto))
+             (this-decl (second proto)))
+        (cond ((eq (car (auto-proto-decl-type this-decl)) 'fn)
+               ;; Insert or update function prototype
+               (unless (auto-proto-decl-has-body this-decl)
+                 (auto-proto-error-decl
+                  this-decl
+                  "This declaration is already a prototype"))
+               (auto-proto-do-function-prototype this-text this-decl))
+              (t
+               ;; XXX Highlight decl
                (auto-proto-error-decl
                 this-decl
-                "This declaration is already a prototype"))
-             (auto-proto-do-function-prototype this-text this-decl))
-            (t
-             ;; XXX Highlight decl
-             (auto-proto-error-decl
-              this-decl
-              "I don't know how to prototype this"))))))
+                "I don't know how to prototype this")))))))
 
 (defun auto-proto-error-decl (decl fmt &rest args)
   ;; XXX Highlight decl
@@ -423,91 +430,251 @@
   ;; XXX
   nil)
 
+;; The right interface to this is to search for the declaration in all
+;; known files (the current file, any headers previously told to this
+;; function, maybe any #include's we can find, user hooks).  If it
+;; can't be found, assume the current file and prompt for insertion.
+;; One of the insertion options should be to specify another file.  If
+;; this is chosen add the file to the future search path, search that
+;; file for the declaration and offer to update it if present or
+;; insert it if not.
+;;
+;; Should the update prompt be similar to the insertion prompt?  A
+;; number of aspects are different.  For example, in theory, it should
+;; only find one prototype, and if it does find the prototype, it
+;; shouldn't make sense to consider a different file.
+;;
+;; Also, make it easy to go to lower ranked positions and to other
+;; files that it searched.
+;;
+;; Options
+;;  s - Toggle static (only if definition is non-static) (both)
+;;  k - Push prototype on kill ring, push mark, and leave point at
+;;      proposed insertion point (both)
+;;  f - Specify alternate file
+;;  n - Next file (maybe both)
+;;  p - Previous file (maybe both)
+;;  a - More likely positions (maybe both)
+;;  z - Less likely positions (maybe both)
+
+(defvar auto-proto-buffer-search-path '())
+(make-variable-buffer-local 'auto-proto-buffer-search-path)
+
+(defun auto-proto-default-search-path (decl)
+  ;; If this function is static or inline, it should always be local
+  ;; to the function
+  (if (auto-proto-decl-is-file-scope decl)
+      (list (buffer-file-name))
+    (concat
+     ;; Search this file first
+     (list (buffer-file-name))
+     ;; Then other files we've been explicitly told about
+     auto-proto-buffer-search-path
+     ;; Then included files that we can find
+     (save-excursion
+       (goto-char (point-min))
+       (let (files)
+         (while (re-search-forward "^#include[ \t]+\"\\([^\"]+\\)\"[ \t]*$" nil t)
+           (push (match-string 1) files))
+         (reverse files)))
+     ;; XXX Then user hooks
+     )))
+
+(defun auto-proto-src-path-add (src-path path &optional decl-buf)
+  ;; Only add existing files and files that are open in buffers but
+  ;; not necessarily saved yet
+  (if (not (or (file-exists-p path)
+               (find-buffer-visiting path)))
+      src-path
+    (cons (cons path
+                ;; Is this the original buffer of the declaration?  We
+                ;; don't need to try too hard to figure this out.
+                (if (and decl-buf
+                         (string= path (buffer-file-name decl-buf)))
+                    (list :file-scope t)
+                  nil))
+          src-path)))
+
+(defun auto-proto-src-buf (src-path-entry)
+  (let* ((path (car src-path-entry))
+         (plist (cdr src-path-entry))
+         (cur-buf (plist-get plist :buf)))
+    (if (and cur-buf (buffer-name cur-buf))
+        cur-buf
+      (let ((buf (find-buffer-visiting path))
+            (transient nil))
+        (unless buf
+          (setq buf (find-file-noselect path t t)
+                transient t))
+        (setcdr src-path-entry
+                (plist-put (plist-put plist :buf buf)
+                           :transient transient))
+        buf))))
+
+(defun auto-proto-find-decl (decl-name &optional pred)
+  (c-save-buffer-state
+      ((re (concat "\\<" decl-name "\\>"))
+       (last -1))
+    (catch 'return
+      (save-excursion
+        (goto-char (point-min))
+        (while (re-search-forward re nil t)
+          (unless (or (c-literal-limits)
+                      (not (c-at-toplevel-p)))
+            (save-excursion
+              (c-beginning-of-statement-1)
+              (unless (= (point) last)
+                (setq last (point))
+                (let ((decl (auto-proto-read-declaration)))
+                  (sit-for 1)
+                  (when (and decl
+                             (string= (auto-proto-decl-name decl) decl-name)
+                             (or (null pred) (funcall pred decl)))
+                    (throw 'return decl))))))))
+      nil)))
+
 (defun auto-proto-do-function-prototype (text decl)
-  ;; Get the summary of this file so we can figure out if decl already
-  ;; has a prototype and what decl is relative to
-  (let* ((decl-name (or (auto-proto-decl-name decl)
-                        (auto-proto-error-decl
-                         decl
-                         "This function doesn't have a name")))
-         (decl-storage (auto-proto-decl-storage decl))
-         (file-summ (auto-proto-summarize))
-         (file-protos (remove-if-not #'auto-proto-decl-is-fnproto file-summ))
-         (file-proto-names (auto-proto-name-alist file-protos))
-         ;; XXX Header file
-         (in-file (cdr (assoc decl-name file-proto-names)))
-         )
-    (cond
-     (in-file
-      (let ((extents (auto-proto-decl-extents in-file)))
-        ;; Point out the prototype being replaced
-        (goto-char (car extents))
-        (auto-proto-highlight-decl in-file)
-        ;; If the prototype is static and the declaration isn't
-        ;; already static, make the new prototype static
-        (when (and (memq 'static (auto-proto-decl-storage in-file))
-                   (not (memq 'static decl-storage)))
-          (setq text (concat "static " text)))
-        ;; Prompt
-        (when (y-or-n-p (format "Replace prototype with\n %s;\n? " text))
-          ;; Replace the old prototype
-          (delete-region (car extents) (cdr extents))
-          (goto-char (car extents))
-          (insert text))))
-     (t
-      (let ((protos
-             ;; Should the prototype be in this file or in the header?
-             ;; If it's static or inline, it should always be in the
-             ;; file.  Otherwise, ask.
-             (if (or (memq 'static decl-storage)
-                     (memq 'inline decl-storage))
-                 file-summ
-               ;; XXX
-               file-summ))
-            ;; Figure out the function's surrounding context
-            (pre-context
-             (nreverse
-              (remove-if-not #'auto-proto-decl-is-fndef file-summ)))
-            (post-context nil)
-            (decl-start (car (auto-proto-decl-extents decl))))
-        ;; Roll pre-context on to post-context until pre-context is a
-        ;; list of declarations preceding decl, starting with the one
-        ;; immediately preceding it and post-context is a list of
-        ;; declarations following decl, starting with the one
-        ;; immediately following it.  The context, in priority order,
-        ;; is then the concatenation of these
-        (while (and pre-context
-                    (> (car (auto-proto-decl-extents (car pre-context)))
-                       decl-start))
-          (setq post-context (cons (car pre-context) post-context))
-          (setq pre-context  (cdr pre-context)))
-        (when (and pre-context
-                   (= (car (auto-proto-decl-extents (car pre-context)))
-                      decl-start))
-          (setq pre-context (cdr pre-context)))
-        ;; Compute the insertion point
-        (message "Finding prototype insertion point...")
-        (let* ((insertion
-                (auto-proto-compute-insertion decl pre-context post-context
-                                              protos))
-               (where (first insertion))
-               (pre (second insertion))
-               (post (third insertion)))
-          (setq text (concat pre text ";" post))
-          ;; Prompt to insert the prototype
-          (goto-char where)
-          (when (let ((ov (make-overlay where (1+ where))))
-                  (unwind-protect
-                      (progn
-                        (overlay-put ov 'before-string text)
-                        ;; XXX
-                        (overlay-put ov 'face
-                                     '((:background "midnight blue")))
-                        ;; XXX Other options: k to put prototype in
-                        ;; kill ring and to push the original point
-                        (y-or-n-p "Insert prototype? "))
-                    (delete-overlay ov)))
-            (insert text))))))))
+  (let ((decl-name (or (auto-proto-decl-name decl)
+                       (auto-proto-error-decl
+                        decl
+                        "This function doesn't have a name")))
+        (src-path
+         (let ((search-path (auto-proto-default-search-path decl))
+               src-path)
+           (dolist (path search-path)
+             (setq src-path (auto-proto-src-path-add src-path path
+                                                     (current-buffer))))
+           (nreverse src-path)))
+        (done nil))
+    (while (not done)
+      ;; Search for existing declarations in the search path
+      (let (existing-decl existing-src)
+        (save-excursion
+          (dolist (src src-path)
+            (let ((buf (auto-proto-src-buf src)))
+              (with-current-buffer buf
+                (let ((e (auto-proto-find-decl decl-name
+                                               #'auto-proto-decl-is-fnproto)))
+                  (when e
+                    (setq existing-decl e
+                          existing-src src)
+                    (return)))))))
+        (let (state)
+          (if existing-decl
+              (let ((replace-text
+                     (if (and (plist-get (cdr existing-src) :file-scope)
+                              (not (auto-proto-decl-is-file-scope decl)))
+                         (concat "static " text)
+                       text))
+                    (buf (auto-proto-src-buf existing-src)))
+                (switch-to-buffer buf t)
+                (setq state (auto-proto-prompt-update
+                             decl replace-text existing-decl)))
+            ;; Prompt can update done, search-path
+            (error "Insert not implemented"))
+          (setq done (first state)
+                search-path (second state)))))))
+
+;; XXX Close transient src's
+
+(defun auto-proto-prompt-update (decl text existing)
+  (let ((extents (auto-proto-decl-extents existing)))
+    ;; Point out the prototype being replaced
+    (goto-char (car extents))
+    (auto-proto-highlight-decl existing)
+    ;; Prompt
+    (when (y-or-n-p (format "Replace prototype with\n %s;\n? " text))
+      ;; Replace the old prototype
+      (delete-region (car extents) (cdr extents))
+      (goto-char (car extents))
+      (insert text)))
+  (list t nil))
+
+;; (defun auto-proto-do-function-prototype (text decl)
+;;   ;; Get the summary of this file so we can figure out if decl already
+;;   ;; has a prototype and what decl is relative to
+;;   (let* ((decl-name (or (auto-proto-decl-name decl)
+;;                         (auto-proto-error-decl
+;;                          decl
+;;                          "This function doesn't have a name")))
+;;          (decl-storage (auto-proto-decl-storage decl))
+;;          (file-summ (auto-proto-summarize))
+;;          (file-protos (remove-if-not #'auto-proto-decl-is-fnproto file-summ))
+;;          (file-proto-names (auto-proto-name-alist file-protos))
+;;          ;; XXX Header file
+;;          (in-file (cdr (assoc decl-name file-proto-names)))
+;;          )
+;;     (cond
+;;      (in-file
+;;       (let ((extents (auto-proto-decl-extents in-file)))
+;;         ;; Point out the prototype being replaced
+;;         (goto-char (car extents))
+;;         (auto-proto-highlight-decl in-file)
+;;         ;; If the prototype is static and the declaration isn't
+;;         ;; already static, make the new prototype static
+;;         (when (and (memq 'static (auto-proto-decl-storage in-file))
+;;                    (not (memq 'static decl-storage)))
+;;           (setq text (concat "static " text)))
+;;         ;; Prompt
+;;         (when (y-or-n-p (format "Replace prototype with\n %s;\n? " text))
+;;           ;; Replace the old prototype
+;;           (delete-region (car extents) (cdr extents))
+;;           (goto-char (car extents))
+;;           (insert text))))
+;;      (t
+;;       (let ((protos
+;;              ;; Should the prototype be in this file or in the header?
+;;              ;; If it's static or inline, it should always be in the
+;;              ;; file.  Otherwise, ask.
+;;              (if (or (memq 'static decl-storage)
+;;                      (memq 'inline decl-storage))
+;;                  file-summ
+;;                ;; XXX
+;;                file-summ))
+;;             ;; Figure out the function's surrounding context
+;;             (pre-context
+;;              (nreverse
+;;               (remove-if-not #'auto-proto-decl-is-fndef file-summ)))
+;;             (post-context nil)
+;;             (decl-start (car (auto-proto-decl-extents decl))))
+;;         ;; Roll pre-context on to post-context until pre-context is a
+;;         ;; list of declarations preceding decl, starting with the one
+;;         ;; immediately preceding it and post-context is a list of
+;;         ;; declarations following decl, starting with the one
+;;         ;; immediately following it.  The context, in priority order,
+;;         ;; is then the concatenation of these
+;;         (while (and pre-context
+;;                     (> (car (auto-proto-decl-extents (car pre-context)))
+;;                        decl-start))
+;;           (setq post-context (cons (car pre-context) post-context))
+;;           (setq pre-context  (cdr pre-context)))
+;;         (when (and pre-context
+;;                    (= (car (auto-proto-decl-extents (car pre-context)))
+;;                       decl-start))
+;;           (setq pre-context (cdr pre-context)))
+;;         ;; Compute the insertion point
+;;         (message "Finding prototype insertion point...")
+;;         (let* ((insertion
+;;                 (auto-proto-compute-insertion decl pre-context post-context
+;;                                               protos))
+;;                (where (first insertion))
+;;                (pre (second insertion))
+;;                (post (third insertion)))
+;;           (setq text (concat pre text ";" post))
+;;           ;; Prompt to insert the prototype
+;;           (goto-char where)
+;;           (when (let ((ov (make-overlay where (1+ where))))
+;;                   (unwind-protect
+;;                       (progn
+;;                         (overlay-put ov 'before-string text)
+;;                         ;; XXX
+;;                         (overlay-put ov 'face
+;;                                      '((:background "midnight blue")))
+;;                         ;; XXX Other options: k to put prototype in
+;;                         ;; kill ring and to push the original point
+;;                         (y-or-n-p "Insert prototype? "))
+;;                     (delete-overlay ov)))
+;;             (insert text))))))))
 
 (defun auto-proto-compute-insertion (decl pre-context post-context dest-decls)
   "Return a triple indicating where and how to insert the prototype of decl.
