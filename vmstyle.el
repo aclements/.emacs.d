@@ -275,6 +275,8 @@ mini-buffer."
 
 (defvar vmstyle-specialize-comment-indent t)
 
+;; XXX This isn't always correct.  For example, hitting tab on an
+;; existing comment line screws it up instead of re-indenting it.
 (defun vmstyle-compute-comment-indent ()
   (let (range)
     (when (c-save-buffer-state
@@ -313,5 +315,75 @@ mini-buffer."
             (insert indent)
             (length indent))))
       ad-do-it))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Misc utilities
+;;
+
+(defun vmstyle-line-to-block-comment (beg end)
+  "Convert a block of line comments to a block comment.
+
+If the transient mark is active, then this converts the comment
+in the region.  Otherwise, point must be in a comment and this
+will find the beginning and end of the comment block."
+
+  (interactive
+   (if (and transient-mark-mode mark-active)
+       (list (region-beginning) (region-end))
+     (save-excursion
+       (beginning-of-line)
+       (let ((start (point))
+             (beg (point)))
+         ;; Find the beginning of this comment
+         (while (and (looking-at "[ \t]*//") (not (bobp)))
+           (setq beg (match-beginning 0))
+           (forward-line -1))
+         ;; Find the end
+         (goto-char start)
+         (while (and (looking-at "[ \t]*//") (not (eobp)))
+           (forward-line))
+         (list beg (point))))))
+
+  (unless (markerp end)
+    (setq end (set-marker (make-marker) end)))
+  (save-excursion
+    (goto-char beg)
+    (beginning-of-line)
+    (unless (looking-at "\\([ \t]*\\)//")
+      (error "Not in a line comment %s %s" beg end))
+    (let ((leader (match-string 1)))
+      (insert (concat leader "/*\n"))
+      (while (re-search-forward "^[ \t]*\\(//\\)" end t)
+        (replace-match " *" nil t nil 1))
+      (goto-char (match-end 0))
+      (end-of-line)
+      (insert (concat "\n" leader " */")))))
+
+(defun vmstyle-convert-line-comments ()
+  "Convert all block line comments following point into block comments.
+
+This will search for all two-or-more line blocks of line comments
+after point.  For each comment, it will prompt for whether or not
+to convert it into a block comment."
+
+  (interactive)
+
+  (push-mark)
+  (beginning-of-line)
+  ;; If we're in a comment, get to the beginning
+  (while (and (looking-at "[ \t]*//") (not (bobp)))
+    (forward-line -1))
+  ;; For each 2 or more line comment...
+  (while (re-search-forward "^\\([ \t]*//.*\n\\)\\{2,\\}" nil t)
+    ;; Should we convert it?
+    (when (let ((ov (make-overlay (match-beginning 0) (match-end 0))))
+            (unwind-protect
+                (progn
+                  (overlay-put ov 'face 'highlight)
+                  (y-or-n-p "Convert to block comment? "))
+              (delete-overlay ov)))
+      ;; Convert it
+      (vmstyle-line-to-block-comment (match-beginning 0) (match-end 0)))))
 
 (provide 'vmstyle)
