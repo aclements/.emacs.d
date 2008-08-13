@@ -266,54 +266,66 @@ mini-buffer."
 ;; Comment editing
 ;;
 
-(defvar vmstyle-function-prologue-begin-re "/\\*\n \\*--")
-(defvar vmstyle-function-prologue-continuation-re "^[ \t]*\\*?[ \t]*$")
-(defvar vmstyle-function-prologue-section-re
+(defvar vmstyle-prologue-comment-begin-re
+  ;; This version only matches function prologue comments
+  ;; "^/\\*\n \\*--"
+  ;; This version also applies to file prologue comments
+  "^/\\*\n\\([- *]*\n\\)* \\* [^ ]+ --")
+(defvar vmstyle-prologue-comment-continuation-re "^[ \t]*\\*?[ \t]*$")
+(defvar vmstyle-prologue-comment-section-re
   "^[ \t]*\\*\\(-\\| [^ ].*\\(--\\|:\\)[ \t]*$\\)")
 
-(defvar vmstyle-function-prologue-default-indent " *      ")
+(defvar vmstyle-prologue-comment-default-indent " *      ")
 
 (defvar vmstyle-specialize-comment-indent t)
 
-;; XXX This isn't always correct.  For example, hitting tab on an
-;; existing comment line screws it up instead of re-indenting it.
-(defun vmstyle-compute-comment-indent ()
+(defun vmstyle-compute-prologue-comment-indent ()
   (let (range)
+    ;; Are we looking at a function comment?
     (when (c-save-buffer-state
               ()
             (setq range (c-literal-limits))
             (when range
               (save-excursion
                 (goto-char (car range))
-                (looking-at vmstyle-function-prologue-begin-re))))
+                (looking-at vmstyle-prologue-comment-begin-re))))
       ;; We are.  Go backwards until we find another line of text
       (save-excursion
         (beginning-of-line)
         (forward-line -1)
-        (while (looking-at vmstyle-function-prologue-continuation-re)
+        (while (looking-at vmstyle-prologue-comment-continuation-re)
           (forward-line -1))
         ;; What did we hit?
         (when (or (looking-at "^/\\*")
-                  (looking-at vmstyle-function-prologue-section-re))
+                  (looking-at vmstyle-prologue-comment-section-re))
           ;; We hit the beginning of the comment or a section
           ;; within the comment.  Find the first real line of text.
           (goto-char (car range))
           (forward-line)
           (beginning-of-line)
-          (while (or (looking-at vmstyle-function-prologue-continuation-re)
-                     (looking-at vmstyle-function-prologue-section-re))
+          (while (or (looking-at vmstyle-prologue-comment-continuation-re)
+                     (looking-at vmstyle-prologue-comment-section-re))
             (forward-line)))
         ;; Take our indentation from this line
         (if (looking-at "^[ \t]*\\*?[ \t]*")
             (match-string 0)
-          vmstyle-function-prologue-default-indent)))))
+          vmstyle-prologue-comment-default-indent)))))
 
 (defadvice c-indent-line (around indent-in-function-header activate)
   (or (when vmstyle-specialize-comment-indent
-        (let ((indent (vmstyle-compute-comment-indent)))
+        (let ((indent (vmstyle-compute-prologue-comment-indent)))
           (when indent
-            (insert indent)
-            (length indent))))
+            (save-excursion
+              (beginning-of-line)
+              ;; Clean up existing comment markers
+              (let ((deleted 0))
+                (when (looking-at "[ \t]*\\*[ \t]*")
+                  (delete-region (match-beginning 0) (match-end 0))
+                  (setq deleted (- (match-end 0) (match-beginning 0))))
+                ;; Insert the new comment marker.  If point was at the
+                ;; beginning of line, it should move forward.
+                (insert-before-markers indent)
+                (- (length indent) deleted))))))
       ad-do-it))
 
 
@@ -369,6 +381,7 @@ to convert it into a block comment."
 
   (interactive)
 
+  ;; XXX This can get tricked by side comments
   (push-mark)
   (beginning-of-line)
   ;; If we're in a comment, get to the beginning
