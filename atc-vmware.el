@@ -26,8 +26,8 @@
           (sit-for 2)
           (set-window-configuration config)))))
 
-  (load "vmstyle")
-  (vmstyle-highlight-long-lines)
+  (setq vmstyle-enable-c-style nil)     ; Handled in atc-cc.el
+  (require 'vmstyle-load)
   (eval-after-load 'cc-mode
     '(define-key c-mode-map "\C-ci" #'vmstyle-prologue-dwim))
   )
