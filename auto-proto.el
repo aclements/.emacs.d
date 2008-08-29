@@ -340,6 +340,8 @@
   (let* ((decl (auto-proto-read-declaration))
          (extents (auto-proto-decl-extents decl)))
     (when decl
+      ;; Remove comments and scrunch whitespace
+      ;; XXX Insert line breaks after commas to maintain the fill width
       (let ((str (buffer-substring (car extents) (cdr extents))))
         (with-temp-buffer
           (c-mode)
