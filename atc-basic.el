@@ -275,6 +275,16 @@ well with `atc:setup-server'."
   (save-match-data
     (when (re-search-backward "^To:\\(\\s *\\)$" nil t)
       (goto-char (match-end 1)))))
+(defun atc:post-mode-disable-saveplace ()
+  "Disable the saveplace package for post-mode buffers"
+  (when (featurep 'saveplace)
+    (setq save-place nil)
+    ;; If saveplace recognizes this file, it will ignore being
+    ;; disabled
+    (or save-place-loaded (load-save-place-alist-from-file))
+    (let ((cell (assoc buffer-file-name save-place-alist)))
+      (if cell
+          (setq save-place-alist (remq cell save-place-alist))))))
 (defun atc:setup-post-mode ()
   (autoload 'post-mode "post"
     "Major mode for composing email or news with an external agent." t)
@@ -282,7 +292,8 @@ well with `atc:setup-server'."
                (cons "\\(mutt\\(ng\\)?-[a-zA-Z0-9-.]+-[0-9]+-[0-9]+\\|mutt\\(ng\\)?[a-zA-Z0-9._-]\\{6\\}\\)\\'"
                      #'post-mode)
                t)
-  (add-hook 'post-mode-hook (function atc:post-mode-jump-cursor)))
+  (add-hook 'post-mode-hook (function atc:post-mode-jump-cursor))
+  (add-hook 'post-mode-hook (function atc:post-mode-disable-saveplace)))
 
 ;;; Org mode
 
