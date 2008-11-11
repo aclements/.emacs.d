@@ -2,6 +2,11 @@
   ;; SCons scripts
   (add-to-list 'auto-mode-alist (cons "\\.sc\\'" (function python-mode)))
 
+  ;; Save-place is stupidly slow on VMware NFS, mostly from checking
+  ;; for unreadable files
+  (setq save-place-file (concat "/tmp/.emacs-places-" (user-login-name))
+        save-place-forget-unreadable-files nil)
+
   ;; Simple p5 integration
   (defun p5-edit ()
     (interactive)
