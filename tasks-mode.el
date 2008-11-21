@@ -292,7 +292,7 @@ recognized by tasks-parse-date.")
          (year (nth 5 time)))
     (tasks-jump-to-date (list month day year))))
 
-(defun tasks-jump-or-insert (date)
+(defun tasks-jump-or-insert (date &optional no-task)
   (interactive (list (tasks-read-date)))
   (if (tasks-jump-to-date date)
       (forward-line 1)
@@ -302,9 +302,30 @@ recognized by tasks-parse-date.")
       (newline))
     (insert (tasks-unparse-date date))
     (newline)
-    (insert " - ")
-    (save-excursion
-      (newline))))
+    (unless no-task
+      (insert " - ")
+      (save-excursion
+        (newline)))))
+
+(defun tasks-insert-from-file (file)
+  (interactive "f")
+
+  (let ((data
+         (with-temp-buffer
+           (insert-file-contents file)
+           (goto-char (point-min))
+           (let ((date (tasks-parse-date)))
+             (goto-char (tasks-date-end))
+             (unless (looking-at "\n")
+               (error "Garbage found after date"))
+             (forward-char)
+             (let ((start (point)))
+               (goto-char (point-max))
+               (skip-chars-backward " \n\t")
+               (list date (buffer-substring start (point))))))))
+    (tasks-jump-or-insert (first data) t)
+    (insert (second data))
+    (newline)))
 
 (defun tasks-toggle-checkmark ()
   (interactive)
