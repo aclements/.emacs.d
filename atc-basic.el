@@ -168,7 +168,13 @@ unnecessary whitespace."
   ;; The Emacs terminal emulator tends to confuse programs by setting
   ;; TERM to "Emacs".  It's basically a vt100 emulator (just like every
   ;; other terminal emulator out there)
-  (setenv "TERM" "vt100"))
+  (setenv "TERM" "vt100")
+
+  ;; Don't blink the cursor
+  (blink-cursor-mode -1)
+
+  ;; Don't update the cscope database on every query
+  (setq cscope-do-not-update-database t))
 
 ;;; General settings
 
