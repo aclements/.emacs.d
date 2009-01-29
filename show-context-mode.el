@@ -378,23 +378,28 @@ to use the buffer's comment syntax to also strip comments."
   "The state of the show-context-mode parser for a given buffer.
 This is a tuple of the form:
 
-  (VALID CACHE OPEN-CHAR CLOSE-CHAR)
+  (VALID CACHE TOKEN-RE)
 
-OPEN-CHAR and CLOSE-CHAR are the characters used to increase and
-decrease the nesting level, respectively.
+TOKEN-RE is a regular expression where group 1 must match text
+that increases the nesting level, group 2 must match text that
+decreases the nesting level, and group 3 must match the entirety
+of any additional tokens of interest.  Group 3 may contain
+subgroups.
 
 CACHE is a cached list of the locations of nesting markers and
 the state of the Emacs parser at these locations.  Each entry is
 of the form:
 
-  (POS INCREASE-P DEPTH PARSER-STATE)
+  (POS DELTA DEPTH PARSER-STATE MATCH-DATA)
 
-POS indicates the buffer position of the nesting marker.
-INCREASE-P is t if this marker increases the nesting, nil
-otherwise.  DEPTH is the depth of this marker, starting at 0 (the
-open and close markers have the same depth).  DEPTH may be
-negative if nesting is unbalanced.  PARSER-STATE is the state of
-the Emacs syntax table parser at this position.
+POS indicates the buffer position of the beginning of the matched
+token.  DELTA is 1 if this marker increases the nesting, -1 if it
+decreases the nesting, and 0 otherwise.  DEPTH is the depth of
+this marker, starting at 0 (the open and close markers have the
+same depth).  DEPTH may be negative if nesting is unbalanced.
+PARSER-STATE is the state of the Emacs syntax table parser at
+POS.  MATCH-DATA is the match data of groups 3 and above from
+matching this text.
 
 The cache must be sorted in decreasing order of position.
 
@@ -403,10 +408,11 @@ can be considered valid.  Any entries with a position greater
 than or equal to this should be considered stale.")
 (make-variable-buffer-local 'show-context-mode-parser)
 
-(defun show-context-mode-init-parser (open-char close-char)
+(defun show-context-mode-init-parser (open-str close-str &optional other-re)
   "Initialize the show-context-mode parser for this buffer, using
-open-char and close-char as the characters that increase and
-decrease the nesting level, respectively.
+open-str and close-str as the text that increases or decreases
+the nesting level, respectively.  other-re is an optional regular
+expression to match other tokens of interest.
 
 The show-context-mode parser is capable of efficiently
 determining the nesting level of any point in the buffer, as well
@@ -414,8 +420,12 @@ as traversing backwards by nesting.  It also provides functions
 to efficiently search the buffer while ignoring text in
 comments."
 
-  (setq show-context-mode-parser
-        (list 0 '() open-char close-char))
+  (let ((token-re (concat "\\(" (regexp-quote open-str)
+                          "\\)\\|\\(" (regexp-quote close-str)
+                          "\\)" (when other-re
+                                  (concat "\\|\\(" other-re "\\)")))))
+    (setq show-context-mode-parser
+          (list 0 '() token-re)))
   (add-to-list 'after-change-functions #'show-context-mode-parser-update))
 
 (defun show-context-mode-parser-update (beg end len)
@@ -435,8 +445,7 @@ which are guaranteed to be only leading up to the given point."
     (error "show-context-mode: No active parser"))
   (let ((valid      (first show-context-mode-parser))
         (cache      (second show-context-mode-parser))
-        (open-char  (third show-context-mode-parser))
-        (close-char (fourth show-context-mode-parser)))
+        (token-re   (third show-context-mode-parser)))
     ;; Drop invalid entries from the cache
     (while (and cache (>= (first (car cache)) valid))
       (setq cache (cdr cache)))
@@ -449,41 +458,45 @@ which are guaranteed to be only leading up to the given point."
                           (- (third (car cache))
                              ;; If the last entry was a close,
                              ;; subtract one from the current depth
-                             (if (second (car cache)) 0 1))
+                             (if (= (second (car cache)) -1) 1 0))
                         -1))
-              (pstate (if cache (fourth (car cache)) nil))
-              (skip   (string ?^ open-char close-char)))
-          ;; Go to the open marker.  We have to go to one past because
-          ;; the loop expects this (otherwise skip-chars-forward stays
-          ;; put)
+              (pstate (if cache (fourth (car cache)) nil)))
+          ;; Go to the cached position.  We have to start one past so
+          ;; our search doesn't just stay in place.
           (goto-char (+ pos 1))
           ;; Parse forward to the destination
           (while (and (not (eobp))
                       (< (point) to))
-            ;; Find the nest nesting marker
-            (skip-chars-forward skip)
-            (let ((increase-p (eql (char-after (point)) open-char))
-                  (decrease-p (eql (char-after (point)) close-char)))
-              (when (or increase-p decrease-p)
-                ;; Bring the syntax table parser up to date
-                (setq pstate (parse-partial-sexp pos (point)
-                                                 nil nil pstate)
-                      pos (point))
-                ;; Am I not inside a comment or string?
-                (when (not (or (fourth pstate)
-                               (fifth pstate)))
-                  ;; Found a nesting marking
-                  (when increase-p
+            ;; Find the next token
+            (when (re-search-forward token-re to 'limit)
+              (goto-char (match-beginning 0))
+              ;; Bring the syntax table parser up to date
+              (setq pstate (parse-partial-sexp pos (point)
+                                               nil nil pstate)
+                    pos (point))
+              ;; Am I not inside a comment or string?
+              (when (not (or (fourth pstate)
+                             (fifth pstate)))
+                ;; What did I find?
+                (let ((delta (cond
+                              ((match-string 1) 1)
+                              ((match-string 2) -1)
+                              (t                0)))
+                      (match-data (nthcdr 6 (match-data 1))))
+                  (when (= delta 1)
                     (setq depth (+ depth 1)))
-                  (setq cache (cons (list (point) increase-p depth pstate) cache))
-                  (when decrease-p
-                    (setq depth (- depth 1))))))
-            ;; Move to the next character and continue
-            (unless (eobp)
-              (forward-char))))
-        ;; Update the stored parser state
-        (setcar show-context-mode-parser (point))
-        (setcar (cdr show-context-mode-parser) cache)))
+                  (setq cache (cons (list pos delta depth pstate match-data)
+                                    cache))
+                  (when (= delta -1)
+                    (setq depth (- depth 1)))))
+              ;; Move forward over this token
+              (goto-char (match-end 0))))
+          ;; Update the stored parser state.  Note that we can only
+          ;; report validity as far as `pos' because `to' might have
+          ;; been in the middle of a token, so we have to resume
+          ;; parsing at `pos'.
+          (setcar show-context-mode-parser pos)
+          (setcar (cdr show-context-mode-parser) cache))))
     ;; Find and return the tail of the cache that applies to `to'
     (while (and cache (> (first (car cache)) to))
       (setq cache (cdr cache)))
@@ -497,13 +510,13 @@ within any nesting markers, 0 if point is within one pair, etc."
     (cond ((null cache)
            ;; We're not inside any markers
            -1)
-          ((second (car cache))
+          ((= (second (car cache)) -1)
+           ;; We're one level above the preceding close marker
+           (- (third (car cache)) 1))
+          (t
            ;; We're at the indentation level of the preceding open
            ;; marker
-           (third (car cache)))
-          (t
-           ;; We're one level above the preceding close marker
-           (- (third (car cache)) 1)))))
+           (third (car cache))))))
 
 (defun show-context-mode-parser-up (level)
   "Move point to the enclosing open marker for `level'.  If there
@@ -518,7 +531,8 @@ returns nil."
           ;; requested level.  Thanks to proper nesting, we don't have
           ;; to be more careful.  We also know that we won't find a
           ;; close of this level before the open.
-          (while (and cache (> (third (car cache)) level))
+          (while (and cache (or (> (third (car cache)) level)
+                                (/= (second (car cache)) 1)))
             (setq cache (cdr cache)))
           ;; Go!
           (unless cache
@@ -745,7 +759,7 @@ change.  If no top-level block contains point, returns nil."
      #'show-context-mode-c-get-context)
 
 (defun show-context-mode-c-init ()
-  (show-context-mode-init-parser ?{ ?}))
+  (show-context-mode-init-parser "{" "}"))
 
 (put 'show-context-mode-c-get-context 'show-context-mode-getter-init
      #'show-context-mode-c-init)
