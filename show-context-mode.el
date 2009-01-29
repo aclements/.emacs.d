@@ -743,7 +743,13 @@ change.  If no top-level block contains point, returns nil."
       ;; Scootch the limit back
       (setq limit (min (point) limit))
       ;; Find the beginning of this expression
-      (show-context-mode-skip-chars-backward "^};")
+      (show-context-mode-skip-chars-backward "^};#")
+      ;; If we hit CPP goop, find the end of it
+      (when (eql (char-before (point)) ?#)
+        (end-of-line)
+        (while (eql (char-before (point)) ?\\)
+          (forward-char 1)
+          (end-of-line)))
       ;; Gather up
       (when (< (point) limit)
         (let ((text (show-context-mode-scrunch (point) limit
@@ -759,7 +765,10 @@ change.  If no top-level block contains point, returns nil."
      #'show-context-mode-c-get-context)
 
 (defun show-context-mode-c-init ()
-  (show-context-mode-init-parser "{" "}"))
+  (show-context-mode-init-parser
+   "{" "}"
+   ;; Record #if constructs
+   "^[ \t]*\\(#\\)[ \t]*\\(if\\(n?def\\)\\|else\\|endif\\)\\b\\(.*\\)$"))
 
 (put 'show-context-mode-c-get-context 'show-context-mode-getter-init
      #'show-context-mode-c-init)
@@ -1002,8 +1011,11 @@ handled specially.")
 (put 'java-mode 'show-context-mode-getter
      #'show-context-mode-java-get-context)
 
+(defun show-context-mode-java-init ()
+  (show-context-mode-init-parser "{" "}"))
+
 (put 'show-context-mode-java-get-context 'show-context-mode-getter-init
-     #'show-context-mode-c-init)
+     #'show-context-mode-java-init)
 
 ;; python-mode
 
