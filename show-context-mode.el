@@ -61,7 +61,6 @@
 ;;   levels (or something fancier, like put class:: in the function
 ;;   name and just display the function level)
 ;; * If there's room, might as well scrunch more levels in there
-;; * Do some work to never traverse backwards into CPP stuff
 
 ;; LaTeX mode
 ;; * Scrunch section names
@@ -287,6 +286,12 @@ present by displaying the line that would be there anyways."
     (when (local-variable-p 'show-context-mode-old-hlf)
       (setq header-line-format show-context-mode-old-hlf))))
 
+;; XXX Really this ought to work with the comments in the buffer and
+;; then pull it out to scrunch whitespace.  Then we can use it for
+;; stripping comments off CPP directives and anything else that isn't
+;; guaranteed to be well-balanced with respect to comments.  Probably
+;; introduce a show-context-mode-buffer-substring-no-comments.  Use the
+;; parser cache and deal with comments that do not include eol.
 (defun show-context-mode-scrunch (start end &optional nuke-comments)
   "Scrunch together the code between start and end into a single,
 succinct, newline-less string using
@@ -482,7 +487,13 @@ which are guaranteed to be only leading up to the given point."
                               ((match-string 1) 1)
                               ((match-string 2) -1)
                               (t                0)))
-                      (match-data (nthcdr 6 (match-data 1))))
+                      (match-data
+                       (let ((partial (nthcdr 6 (match-data 1))))
+                         (if (null (cdr partial))
+                             ;; We removed all of the groups, just not
+                             ;; the buffer they came from.
+                             nil
+                           partial))))
                   (when (= delta 1)
                     (setq depth (+ depth 1)))
                   (setq cache (cons (list pos delta depth pstate match-data)
@@ -495,6 +506,14 @@ which are guaranteed to be only leading up to the given point."
           ;; report validity as far as `pos' because `to' might have
           ;; been in the middle of a token, so we have to resume
           ;; parsing at `pos'.
+          ;;
+          ;; XXX Is this actually true?  It would be better for
+          ;; performance if we can claim all the way to `to' is valid.
+          ;; We'll restart our state from the last entry anyways.
+          ;;
+          ;; XXX Short-circuit everything if (<= to valid) or at least
+          ;; don't set valid backwards to the highest cache entry if
+          ;; we didn't do anything.
           (setcar show-context-mode-parser pos)
           (setcar (cdr show-context-mode-parser) cache))))
     ;; Find and return the tail of the cache that applies to `to'
@@ -720,11 +739,48 @@ context but remove comments."
                 (const strip-comments))
   :group 'show-context-c)
 
+(defcustom show-context-mode-c-include-cpp-directives 'always
+  "When to include #if directives in the context.
+
+If 'always, show-context-mode will always summarize and display
+enclosing #if directives.  If 'functions, show-context-mode will
+only display enclosing #if directives if it is also summarizing a
+function definition that is off the screen.  If nil,
+show-context-mode will never display #if directives."
+  :type '(radio (const always)
+                (const functions)
+                (const nil))
+  :group 'show-context-c)
+
 (defun show-context-mode-c-get-context ()
+  "In C code, return a string summarizing the function enclosing
+point and, optionally, any CPP directives enclosing point."
+
+  (let* ((orig-point (point))
+         (function-context
+          (show-context-mode-c-get-function-context))
+         (include show-context-mode-c-include-cpp-directives))
+    (cond
+     ((not include) function-context)
+     ((or (and (eq include 'functions) function-context)
+          (not (eq include 'functions)))
+      (when (not function-context)
+        (goto-char orig-point))
+      ;; XXX What about directives between the end of the function
+      ;; declaration and orig-point?  Or, for that matter, directives
+      ;; embedded in the function declaration (that's probably not
+      ;; worth worrying about)
+      (let ((cpp-context (show-context-mode-c-get-cpp-context)))
+        (when (or cpp-context function-context)
+          (concat cpp-context (when cpp-context " ")
+                  function-context)))))))
+
+(defun show-context-mode-c-get-function-context ()
   "In C code, return a string that represents the current context for
-point.  Specifically, this returns the first line of the statement
-that begins the top-level block containing point, though this might
-change.  If no top-level block contains point, returns nil."
+point.  Specifically, this summarizes the text leading up to the
+top-level block containing point from the last declaration or CPP
+directive preceding that and leaves point at the beginning of
+that text.  If no top-level block contains point, returns nil."
 
   (catch 'done
     (let ((limit (point))
@@ -744,7 +800,9 @@ change.  If no top-level block contains point, returns nil."
       (setq limit (min (point) limit))
       ;; Find the beginning of this expression
       (show-context-mode-skip-chars-backward "^};#")
-      ;; If we hit CPP goop, find the end of it
+      ;; If we hit CPP goop, find the end of it.  XXX We probably
+      ;; don't want to ignore all CPP goop, but if we don't, this has
+      ;; to interact carefully with the CPP context.
       (when (eql (char-before (point)) ?#)
         (end-of-line)
         (while (eql (char-before (point)) ?\\)
@@ -758,6 +816,43 @@ change.  If no top-level block contains point, returns nil."
               nil
             text))))))
 
+;; XXX Support finagling of CPP context, such as ("#ifdef x" "#else")
+;; -> ("#ifndef x").  It's not really clear what to do with elifs.
+(defun show-context-mode-c-get-cpp-context ()
+  "Return a string summarizing the CPP directives enclosing
+point.  If there are no enclosing CPP directives, return nil."
+
+  (let ((parse (show-context-mode-parser-parse (point)))
+        ;; (string symbol this-depth-offset depth-delta watermark-delta)
+        (syms '(("if"     'if     -1 -2 -3)
+                ("ifdef"  'ifdef  -1 -2 -3)
+                ("ifndef" 'ifndef -1 -2 -3)
+                ("else"   'else   -1  0  0)
+                ("elif"   'elif   -1  0  0)
+                ("endif"  nil      1  2  nil)))
+        (enclosing nil))
+    ;; Find just the directives, compute their depths, and keep just
+    ;; the enclosing ones
+    (let ((depth 0)
+          (watermark 0))
+      (dolist (entry parse)
+        (when (fifth entry)
+          (set-match-data (fifth entry))
+          (let* ((op (match-string 2))
+                 (sym (assoc op syms)))
+            (when sym
+              (when (and (second sym)
+                         (<= (+ depth (third sym)) watermark))
+                (let ((text (concat (match-string 1) (match-string 2)
+                                    (when (> (length (match-string 3)) 0)
+                                      " ")
+                                    (match-string 3))))
+                  (push text enclosing)
+                  (setq watermark (+ depth (fifth sym)))))
+              (setq depth (+ depth (fourth sym)))))))
+      (when enclosing
+        (mapconcat 'identity enclosing " ")))))
+
 (put 'c-mode 'show-context-mode-getter
      #'show-context-mode-c-get-context)
 ;; c++-mode is not a derived mode
@@ -767,8 +862,10 @@ change.  If no top-level block contains point, returns nil."
 (defun show-context-mode-c-init ()
   (show-context-mode-init-parser
    "{" "}"
-   ;; Record #if constructs
-   "^[ \t]*\\(#\\)[ \t]*\\(if\\(n?def\\)\\|else\\|endif\\)\\b\\(.*\\)$"))
+   ;; Record #if directives
+   ;; XXX Doesn't deal with comments after CPP directives, or
+   ;; continuation lines
+   "^[ \t]*\\(#\\)[ \t]*\\(if\\(?:n?def\\)?\\|else\\|elif\\|endif\\)\\b[ \t]*\\(.*\\)$"))
 
 (put 'show-context-mode-c-get-context 'show-context-mode-getter-init
      #'show-context-mode-c-init)
