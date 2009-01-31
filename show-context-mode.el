@@ -742,13 +742,24 @@ context but remove comments."
 (defcustom show-context-mode-c-include-cpp-directives 'always
   "When to include #if directives in the context.
 
-If 'always, show-context-mode will always summarize and display
-enclosing #if directives.  If 'functions, show-context-mode will
+If always, show-context-mode will always summarize and display
+enclosing #if directives.  If functions, show-context-mode will
 only display enclosing #if directives if it is also summarizing a
 function definition that is off the screen.  If nil,
 show-context-mode will never display #if directives."
   :type '(radio (const always)
                 (const functions)
+                (const nil))
+  :group 'show-context-c)
+
+(defcustom show-context-mode-cpp-finagle-level 'reduce-elses
+  "How hard to finagle CPP context into a more compact form.
+
+If nil, show-context-mode will include all of the enclosing #if
+directives, unmodified.  If reduce-elses, then a #if, #ifdef, or
+#ifndef followed by a #else will be collapsed into just the #if,
+but with the condition inverted."
+  :type '(radio (const reduce-elses)
                 (const nil))
   :group 'show-context-c)
 
@@ -816,8 +827,6 @@ that text.  If no top-level block contains point, returns nil."
               nil
             text))))))
 
-;; XXX Support finagling of CPP context, such as ("#ifdef x" "#else")
-;; -> ("#ifndef x").  It's not really clear what to do with elifs.
 (defun show-context-mode-c-get-cpp-context ()
   "Return a string summarizing the CPP directives enclosing
 point.  If there are no enclosing CPP directives, return nil."
@@ -843,15 +852,50 @@ point.  If there are no enclosing CPP directives, return nil."
             (when sym
               (when (and (second sym)
                          (<= (+ depth (third sym)) watermark))
-                (let ((text (concat (match-string 1) (match-string 2)
-                                    (when (> (length (match-string 3)) 0)
-                                      " ")
-                                    (match-string 3))))
-                  (push text enclosing)
-                  (setq watermark (+ depth (fifth sym)))))
-              (setq depth (+ depth (fourth sym)))))))
-      (when enclosing
-        (mapconcat 'identity enclosing " ")))))
+                (push (list (match-string 2) (match-string 1) (match-string 3))
+                      enclosing)
+                (setq watermark (+ depth (fifth sym))))
+              (setq depth (+ depth (fourth sym))))))))
+    (when enclosing
+      (when (eq show-context-mode-cpp-finagle-level 'reduce-elses)
+        ;; Simplify #else's.  XXX Can we do anything about #elif's?
+        (let ((ifs (nreverse enclosing)))
+          (setq enclosing nil)
+          (flet ((match2 (a b)
+                  (and (equal (first (car ifs))  a)
+                       (equal (first (cadr ifs)) b)))
+                 (push-replaced (entry op expr)
+                  (let* ((op-props (text-properties-at 0 (first entry)))
+                         (pretty-op (if op
+                                        (apply #'propertize op op-props)
+                                      (first entry)))
+                         (hash (second entry))
+                         (expr-props (text-properties-at 0 (third entry)))
+                         (pretty-expr (if expr
+                                          (apply #'propertize expr expr-props)
+                                        (third entry))))
+                    (push (list pretty-op hash pretty-expr) enclosing))))
+            (while ifs
+              (cond ((match2 "else" "ifdef")
+                     (push-replaced (cadr ifs) "ifndef" nil)
+                     (setq ifs (cddr ifs)))
+                    ((match2 "else" "ifndef")
+                     (push-replaced (cadr ifs) "ifdef" nil)
+                     (setq ifs (cddr ifs)))
+                    ((match2 "else" "if")
+                     (let ((new-expr (concat "!(" (third (cadr ifs)) ")")))
+                       (push-replaced (cadr ifs) nil new-expr))
+                     (setq ifs (cddr ifs)))
+                    (t
+                     (push (car ifs) enclosing)
+                     (setq ifs (cdr ifs))))))))
+      ;; Put all the strings together
+      (mapconcat
+       (lambda (entry)
+         (concat (second entry) (first entry)
+                 (when (> (length (third entry)) 0) " ")
+                 (third entry)))
+       enclosing " "))))
 
 (put 'c-mode 'show-context-mode-getter
      #'show-context-mode-c-get-context)
