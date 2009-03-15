@@ -20,6 +20,22 @@
 ;; this program; if not, write to the Free Software Foundation, Inc., 59 Temple
 ;; Place - Suite 330, Boston, MA 02111-1307, USA.
 
+;;; Notes:
+
+;; * Add a Markus-Bains line
+;; * Support for narrowing to labels
+;; * Better automatic indentation
+;; * Repeat support
+;; * Check malformed or out-of-order dates
+
+;; Forms of repeat
+;; Repeat: Every year
+;; Repeat: Every month by day of the week
+;; Repeat: Every month by day of the month
+;; Repeat: Every week
+;; Repeat: Every week on Saturday and Sunday
+;; Repeat: Every day
+
 ;;; Customization:
 
 (defgroup tasks-mode ()
@@ -118,6 +134,10 @@ recognized by tasks-parse-date.")
     ("^ +\\+ .*" . tasks-completed-face)
     ("^ +\\~ .*" . tasks-irrelevant-face)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Date parsing
+;;
+
 ;; XXX Make a single state var
 (defvar tasks-date-match-state nil)
 
@@ -175,6 +195,103 @@ recognized by tasks-parse-date.")
             ", "
             (number-to-string year))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Day parsing
+;;
+
+(defun tasks-day-bounds ()
+  (let ((min-bound (save-excursion
+                     (end-of-line)
+                     (if (re-search-backward tasks-date-regex nil t)
+                         (match-end 0)
+                       (point-min))))
+        (max-bound (save-excursion
+                     (if (re-search-forward tasks-date-regex nil t)
+                         (match-beginning 0)
+                       (point-max)))))
+    (list min-bound max-bound)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Task parsing
+;;
+
+(defconst tasks-marker-meanings
+  '(("-" incomplete)
+    ("+" complete)
+    ("~" irrelevant)
+    (">" event)))
+
+(defconst tasks-meaning-markers
+  (mapcar #'reverse tasks-marker-meanings))
+
+(defalias 'tasks-task-string-bounds #'first)
+
+(defalias 'tasks-task-string #'second)
+
+(defalias 'tasks-task-marker-bounds #'third)
+
+(defun tasks-task-marker (task)
+  (second (assoc (fourth task) tasks-marker-meanings)))
+
+(defalias 'tasks-task-title #'sixth)
+
+(defalias 'tasks-task-body #'eighth)
+
+(defun tasks-task-field (task field)
+  (let ((body (tasks-task-body task))
+        (regexp (concat "^ *" field ": \\(.*\\)")))
+    (when (string-match regexp body)
+      (match-string 1 body))))
+
+(defun tasks-parse-task (&optional top-level)
+  (let* ((min-bound (first (tasks-day-bounds)))
+         (markers (mapcar #'car tasks-marker-meanings))
+         (marker-re (regexp-opt markers t))
+         (marker-or-space-re (regexp-opt (cons " " markers) nil))
+         (start-re (concat "^\\(" (if top-level
+                                      " " " +") "\\)" marker-re " "))
+         (task-re (concat start-re ".*\n\\(?:\\1  .*\n\\)*"))
+         (initial-point (point)))
+    (save-excursion
+      (end-of-line)
+      ;; Find the entire task
+      (when (and (re-search-backward start-re min-bound t)
+                 (looking-at task-re)
+                 (> (match-end 0) initial-point))
+        (let* ((start (match-beginning 0)) (end (match-end 0))
+               (indent (match-string 1))
+               (marker-start (match-beginning 2))
+               (marker-end (match-end 2))
+               (marker (match-string 2))
+               (title-start (+ marker-end 1))
+               ;; Find the first line of the body
+               (body-re (concat "^" indent "  " marker-or-space-re))
+               (body-start (when (re-search-forward body-re end t)
+                             (match-beginning 0)))
+               ;; Find the title
+               (title-end (or body-start end)))
+          (list
+           ;; Task bounds
+           (cons start end)
+           ;; Task string
+           (buffer-substring start end)
+           ;; Marker bounds
+           (cons marker-start marker-end)
+           ;; Marker string
+           marker
+           ;; Title bounds
+           (cons title-start title-end)
+           ;; Title string
+           (buffer-substring title-start title-end)
+           ;; Body bounds
+           (when body-start (cons body-start end))
+           ;; Body string
+           (when body-start (buffer-substring body-start end))))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Date manipulation
+;;
+
 (defun tasks-compare-lists (a b)
   (cond ((null a)            (if (null b) '= '<))
         ((null b)            '>)
@@ -228,6 +345,10 @@ recognized by tasks-parse-date.")
         (exit-calendar))
       (or tasks-date-selected
           (error "No date selected")))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Actions
+;;
 
 (defun tasks-jump-to-date (date)
   (interactive (list (tasks-read-date)))
@@ -329,23 +450,18 @@ recognized by tasks-parse-date.")
 
 (defun tasks-toggle-checkmark ()
   (interactive)
-  (save-excursion
-    (save-match-data
-      (let ((bound (save-excursion
-                     (if (re-search-backward tasks-date-regex nil t)
-                         (match-end 0)
-                       (point-min))))
-            (regex "^ +\\([-+~]\\) "))
-        (end-of-line)
-        (if (not (re-search-backward regex bound t))
-            (error "Not in a task")
-          (goto-char (match-beginning 1))
-          (let ((new (case (char-after (point))
-                       ((?-) ?+)
-                       ((?+) ?-)
-                       ((?~) ?~))))
-            (delete-char 1)
-            (insert new)))))))
+  (let ((task (tasks-parse-task nil)))
+    (unless task
+      (error "There is no task here"))
+    (let* ((marker-bounds (tasks-task-marker-bounds task))
+           (marker (tasks-task-marker task))
+           (new-map '((incomplete complete) (complete incomplete)))
+           (new-marker (or (second (assq marker new-map)) marker))
+           (new-string (second (assq new-marker tasks-meaning-markers))))
+      (save-excursion
+        (goto-char (car marker-bounds))
+        (delete-region (car marker-bounds) (cdr marker-bounds))
+        (insert new-string)))))
 
 (defun tasks-complete-date ()
   (interactive)
@@ -363,7 +479,7 @@ recognized by tasks-parse-date.")
       (ignore-errors
         (tasks-toggle-checkmark)
         t)
-      (error "No date or checkmark at point")))
+      (error "No date or task at point")))
 
 (defvar tasks-mode-map
   (let ((mm (make-sparse-keymap)))
