@@ -143,7 +143,20 @@
                     TeX-run-compile nil (latex-mode)))
      (add-hook 'LaTeX-mode-hook
                (lambda ()
-                 (setq TeX-command-default "Rubber")))))
+                 (setq TeX-command-default "Rubber")))
+
+     ;; Use evince if available
+     (when (executable-find "evince")
+       (add-to-list 'TeX-expand-list
+                    '("%(evincepagelabel)"
+                      (lambda ()
+                        (if TeX-sync-output-page-function
+                            (concat "--page-label="
+                                    (funcall TeX-sync-output-page-function)
+                                    " ")
+                          ""))))
+       (add-to-list 'TeX-output-view-style
+                    '("^pdf$" "." "evince %(evincepagelabel)%o")))))
 
 ;;; Fix flyspell
 
