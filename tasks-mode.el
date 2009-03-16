@@ -69,7 +69,7 @@
     (((background light) (min-colors 9))
      (:foreground "grey60"))
     (t
-     (:foreground "grey")))
+     (:foreground "black" :weight bold)))
   "Face used to indicate irrelevant tasks."
   :group 'tasks-mode)
 
@@ -514,7 +514,8 @@ and that satisfies the given reified repeat."
                  (tasks-parse-date)))))
       (calendar)
       (when date
-        (calendar-goto-date date)))
+        (tasks-let*-ymd ((year month day date))
+           (calendar-goto-date (list month day year)))))
     (let* ((cal-buf (current-buffer))
            (orig-map (current-local-map))
            (new-map (copy-keymap orig-map))
