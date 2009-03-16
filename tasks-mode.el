@@ -31,6 +31,13 @@
 ;; * Figure out how to better repeat events
 ;; * Better highlighting by expanding to entire tasks
 ;; * Highlight events according to whether or not the date has passed
+;; ** In general, events should act like tasks that get checked off
+;;    when their end time passes
+;; * Support for more repeat types.  For example, Mother's day is on
+;;   the second Sunday of May
+;; * Support for hiding events after they have been checked off
+;; ** Probably use a field that specifies a relative time until it
+;;    gets checked off, then change it to an absolute time
 
 ;;; Customization:
 
@@ -124,6 +131,7 @@ subexpression that matches a month name as found in
   "A regular expression matching any of the forms of dates
 recognized by tasks-parse-date.")
 
+;; XXX Generate this from the markers map
 (defconst tasks-font-lock-keywords
   `((,tasks-date-regex . font-lock-keyword-face)
     ("^ +\\- .*" . tasks-incomplete-face)
@@ -164,7 +172,7 @@ Return a date object and set the date match state."
                      (string-to-number (match-string monthpos str))))
                   (day (string-to-number (match-string daypos str)))
                   (year (string-to-number (match-string yearpos str))))
-              (setq result (list month day year)))))
+              (setq result (tasks-make-date-ymd year month day)))))
         (setq regexes (cdr regexes)))
       (unless result
         (if (null str)
@@ -191,18 +199,17 @@ than the number of months in a year), and should be
 canonicalized."
 
   (if (not canonicalize)
-      ;; This was a terrible idea
-      (list month day year)
+      (list year month day)
     (let ((dtime (decode-time (encode-time 0 0 0 day month year))))
-      (list (fifth dtime) (fourth dtime) (sixth dtime)))))
+      (list (sixth dtime) (fifth dtime) (fourth dtime)))))
 
 (defmacro tasks-let*-ymd (bindings &rest body)
   (let ((lb (mapcan (lambda (b)
                       (let ((temp (gensym)))
                         `((,temp ,@(nthcdr 3 b))
-                          (,(first b) (caddr ,temp))
-                          (,(second b) (car ,temp))
-                          (,(third b) (cadr ,temp)))))
+                          (,(first b) (car ,temp))
+                          (,(second b) (cadr ,temp))
+                          (,(third b) (caddr ,temp)))))
                     bindings)))
     `(let* ,lb ,@body)))
 
@@ -277,7 +284,7 @@ canonicalized."
 (defun tasks-task-field (task field)
   (let ((body (tasks-task-body task))
         (regexp (concat "^ *" field ": \\(.*\\)")))
-    (when (string-match regexp body)
+    (when (and body (string-match regexp body))
       (match-string 1 body))))
 
 (defun tasks-parse-task (&optional top-level)
@@ -601,7 +608,7 @@ and that satisfies the given reified repeat."
          (day (nth 3 time))
          (month (nth 4 time))
          (year (nth 5 time)))
-    (tasks-jump-to-date (list month day year))))
+    (tasks-jump-to-date (tasks-make-date-ymd year month day))))
 
 (defun tasks-jump-or-insert (date &optional no-task)
   (interactive (list (tasks-read-date)))
@@ -614,6 +621,7 @@ and that satisfies the given reified repeat."
     (insert (tasks-unparse-date date))
     (newline)
     (unless no-task
+      ;; XXX Generate this from the markers map
       (insert " - ")
       (save-excursion
         (newline)))))
