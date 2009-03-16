@@ -454,7 +454,9 @@ context, producing a reified repeat."
                 (error "Repeat does not include the weekday of this event"))
                (t
                 (error "Complex week repeat not implemented"))))
-        ((month-by-dow) (error "Month-by-DOW not implemented"))
+        ((month-by-dow)
+         ;; See calendar-nth-named-day
+         (error "Month-by-DOW not implemented"))
         (t (error "Illegal parsed repeat %S" repeat))))))
 
 (defun tasks-repeat-after (rrepeat date)
@@ -523,7 +525,11 @@ and that satisfies the given reified repeat."
       (define-key new-map (kbd "RET")
         (lambda ()
           (interactive)
-          (setq tasks-date-selected (calendar-cursor-to-date))
+          (let ((cdate (calendar-cursor-to-date)))
+            (setq tasks-date-selected (tasks-make-date-ymd
+                                       (third cdate)
+                                       (first cdate)
+                                       (second cdate))))
           (throw 'exit nil)))
       (define-key new-map (kbd "C-g") #'exit-calendar)
       ;; Enter a recursive edit inside the calendar, using our
