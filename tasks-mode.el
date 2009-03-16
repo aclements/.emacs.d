@@ -25,16 +25,12 @@
 ;; * Add a Markus-Bains line
 ;; * Support for narrowing to labels
 ;; * Better automatic indentation
-;; * Repeat support
+;; ** Wrap in tasks-insert-from-file
 ;; * Check malformed or out-of-order dates
-
-;; Forms of repeat
-;; Repeat: Every year
-;; Repeat: Every month by day of the week
-;; Repeat: Every month by day of the month
-;; Repeat: Every week
-;; Repeat: Every week on Saturday and Sunday
-;; Repeat: Every day
+;; * Finish repeat support
+;; * Figure out how to better repeat events
+;; * Better highlighting by expanding to entire tasks
+;; * Highlight events according to whether or not the date has passed
 
 ;;; Customization:
 
@@ -142,6 +138,9 @@ recognized by tasks-parse-date.")
 (defvar tasks-date-match-state nil)
 
 (defun tasks-parse-date (&optional str)
+  "Parse the date beginning at point, or in STR if non-nil.
+Return a date object and set the date match state."
+
   (save-match-data
     (let ((regexes tasks-date-regexes)
           (result nil))
@@ -183,17 +182,44 @@ recognized by tasks-parse-date.")
       (error "No date has been parsed")
     (second tasks-date-match-state)))
 
+(defun tasks-make-date-ymd (year month day &optional canonicalize)
+  "Make a date from the given year, month, and day.  If
+canonicalize is non-nil, then the given arguments may not
+actually represent a valid date (in particular, DAY may be
+greater than the number of days in MONTH or MONTH may be greater
+than the number of months in a year), and should be
+canonicalized."
+
+  (if (not canonicalize)
+      ;; This was a terrible idea
+      (list month day year)
+    (let ((dtime (decode-time (encode-time 0 0 0 day month year))))
+      (list (fifth dtime) (fourth dtime) (sixth dtime)))))
+
+(defmacro tasks-let*-ymd (bindings &rest body)
+  (let ((lb (mapcan (lambda (b)
+                      (let ((temp (gensym)))
+                        `((,temp ,@(nthcdr 3 b))
+                          (,(first b) (caddr ,temp))
+                          (,(second b) (car ,temp))
+                          (,(third b) (cadr ,temp)))))
+                    bindings)))
+    `(let* ,lb ,@body)))
+
+(defun tasks-date-dow (date)
+  (tasks-let*-ymd ((year month day date))
+    (seventh (decode-time (encode-time 0 0 0 day month year)))))
+
 (defun tasks-unparse-date (date)
-  (let* ((day (cadr date))  (month (car date))  (year (caddr date))
-         (encoded (encode-time 0 0 0 day month year))
-         (weekday (nth 6 (decode-time encoded))))
-    (concat (nth weekday tasks-weekdays)
-            ", "
-            (nth (- month 1) tasks-months)
-            " "
-            (number-to-string day)
-            ", "
-            (number-to-string year))))
+  (tasks-let*-ymd ((year month day date))
+    (let ((weekday (tasks-date-dow date)))
+      (concat (nth weekday tasks-weekdays)
+              ", "
+              (nth (- month 1) tasks-months)
+              " "
+              (number-to-string day)
+              ", "
+              (number-to-string year)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Day parsing
@@ -210,6 +236,17 @@ recognized by tasks-parse-date.")
                          (match-beginning 0)
                        (point-max)))))
     (list min-bound max-bound)))
+
+(defun tasks-day-tasks ()
+  (save-excursion
+    (let ((min-bound (first (tasks-day-bounds)))
+          (tasks nil) task)
+      (goto-char min-bound)
+      (forward-line)
+      (while (setq task (tasks-parse-task t))
+        (setq tasks (cons task tasks))
+        (goto-char (cdr (tasks-task-string-bounds task))))
+      (reverse tasks))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Task parsing
@@ -244,6 +281,11 @@ recognized by tasks-parse-date.")
       (match-string 1 body))))
 
 (defun tasks-parse-task (&optional top-level)
+  "Parse the task or event containing point.  If TOP-LEVEL is
+non-nil, first find the enclosing top-level task and parse the
+entire task, including sub-tasks in the body.  Otherwise, parse
+the inner-most task."
+
   (let* ((min-bound (first (tasks-day-bounds)))
          (markers (mapcar #'car tasks-marker-meanings))
          (marker-re (regexp-opt markers t))
@@ -289,6 +331,153 @@ recognized by tasks-parse-date.")
            (when body-start (buffer-substring body-start end))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Repeat parsing and manipulation
+;;
+
+(defun tasks-parse-repeat (str)
+  "Parse the repeat specification given in STR.  The result is
+this is merely a machine-readable form of the English
+specification.  It is semantically interpreted when combined with
+a date using `tasks-reify-repeat' to form a repeat object.
+
+The grammar of repeat specifications is
+
+REPEAT ::= COUNT? SPEC | SPECLY
+
+COUNT ::= every NUM? | every other
+
+SPEC ::= year | month MONTH-QUAL | week WEEK-QUAL | day
+
+SPECLY ::= yearly | monthly MONTH-QUAL | weekly WEEK-QUAL | daily
+
+MONTH-QUAL ::= by the? day of the? (week | month)
+
+WEEK-QUAL ::= on WEEKDAY ((,? and | ,) WEEKDAY)*"
+
+  (with-temp-buffer
+    (insert str)
+    (goto-char (point-min))
+    ;; Simplify whitespace
+    (save-excursion
+      (delete-region (point-min)
+                     (progn (skip-chars-forward "[:space:]")
+                            (point)))
+      (while (re-search-forward "[[:space:]]+" nil t)
+        (replace-match " "))
+      (goto-char (point-max))
+      (delete-region (progn (skip-chars-backward "[:space:]")
+                            (point))
+                     (point-max))
+      (insert " "))
+    (setq case-fold-search t)
+    (let* (;; Parse count
+           (count*
+            (progn
+              ;; Canonicalize -ly words
+              (save-excursion
+                (cond ((looking-at "\\(year\\|month\\|week\\)ly")
+                       (replace-match (concat "Every " (match-string 1))))
+                      ((looking-at "daily")
+                       (replace-match "Every day"))))
+              ;; Parse
+              (cond ((looking-at "Every \\([0-9]+\\) ")
+                     (string-to-number (match-string 1)))
+                    ((looking-at "Every other ") 2)
+                    ((looking-at "Every ") 1)
+                    (t nil))))
+           (count (if (not count*)
+                      1
+                    (goto-char (match-end 0))
+                    count*))
+           ;; Parse specifier
+           (spec*
+            (cond ((looking-at "years? ") 'year)
+                  ((looking-at "months? by \\(the \\)?day of \\(the \\)?week ")
+                   'month-by-dow)
+                  ;; XXX Should this be the default if just given "month"?
+                  ((looking-at "months? by \\(the \\)?day of \\(the \\)?month ")
+                   'month-by-dom)
+                  ((looking-at "months? ")
+                   (error "Expecting \"by day of week\" or \"by day of month\""))
+                  ((looking-at "weeks? ") 'week)
+                  ((looking-at "days? ") 'day)
+                  (t (error "Expecting \"year\", \"month\", \"week\" or \"day\""))))
+           (spec (progn (goto-char (match-end 0)) spec*))
+           ;; Parse qualifier
+           (qual
+            (when (and (eq spec 'week) (looking-at "on "))
+              ;; XXX Support other things like 'weekdays' and
+              ;; 'weekends'
+              (let* ((dow-regexp (regexp-opt tasks-weekdays t))
+                     (first-regexp (concat "on " dow-regexp " ?"))
+                     (rest-regexp (concat "\\(?:\\(?:, \\)?and\\|,\\) "
+                                          dow-regexp " ?"))
+                     (regexp first-regexp)
+                     (qlist nil))
+                (while (looking-at regexp)
+                  ;; XXX Use index instead of name
+                  (let ((dow (position (match-string 1) tasks-weekdays
+                                       :test #'string=)))
+                    (setq qlist (cons dow qlist)))
+                  (goto-char (match-end 0))
+                  (setq regexp rest-regexp))
+                (reverse qlist))))
+           ;; XXX Parse "until"
+           )
+      (unless (looking-at "$")
+        (error "Unexpected \"%s\"" (buffer-substring (point)
+                                                     (- (point-max) 1))))
+      (list spec count qual))))
+
+(defun tasks-reify-repeat (repeat date)
+  "Combine a parsed repeat with a specific date to give it
+context, producing a reified repeat."
+
+  (tasks-let*-ymd ((year month day date))
+    (let ((dow (tasks-date-dow date))
+          (spec (first repeat)) (count (second repeat)) (qual (third repeat)))
+      (case spec
+        ((year) (list 'additive count 0 year month day))
+        ((month-by-dom) (list 'additive count 1 year month day))
+        ((day) (list 'additive count 2 year month day))
+        ((week)
+         (cond ((null qual)
+                (list 'additive (* count 7) 2 year month day))
+               ((not (memq dow qual))
+                (error "Repeat does not include the weekday of this event"))
+               (t
+                (error "Complex week repeat not implemented"))))
+        ((month-by-dow) (error "Month-by-DOW not implemented"))
+        (t (error "Illegal parsed repeat %S" repeat))))))
+
+(defun tasks-repeat-after (rrepeat date)
+  "Compute the earliest date this is strictly later than DATE
+and that satisfies the given reified repeat."
+
+  (tasks-let*-ymd ((year month day date))
+    (let ((spec (first rrepeat)))
+      (case spec
+        ((additive)
+         ;; ax+b on day, month, or year.  Subtract the base date from
+         ;; the target date, round up the n'th field to the next
+         ;; multiple of count, and then shift it back by the base
+         ;; date.
+         (let* ((count (second rrepeat)) (field-idx (third rrepeat))
+                (bdate (cdddr rrepeat))
+                (tdate (list year month day))
+                (bfield (nth field-idx bdate))
+                (tfield (nth field-idx tdate))
+                (delta (- tfield bfield))
+                (next-delta (* (+ 1 (/ delta count)) count)))
+           ;; Shift it back
+           (setcar (nthcdr field-idx tdate)
+                   (+ bfield next-delta))
+           ;; Canonicalize the date
+           (tasks-make-date-ymd (first tdate) (second tdate) (third tdate) t)))
+        (t
+         (error "Illegal repeat %S" rrepeat))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Date manipulation
 ;;
 
@@ -302,8 +491,9 @@ recognized by tasks-parse-date.")
 (defun tasks-compare-dates (a b)
   (unless (and (= (length a) 3) (= (length b) 3))
     (error "Cannot compare dates %s and %s" a b))
-  (tasks-compare-lists (list (caddr a) (car a) (cadr a))
-                       (list (caddr b) (car b) (cadr b))))
+  (tasks-let*-ymd ((ay am ad a)
+                   (by bm bd b))
+    (tasks-compare-lists (list ay am ad) (list by bm bd))))
 
 (defun tasks-read-date ()
   (save-window-excursion
@@ -448,20 +638,54 @@ recognized by tasks-parse-date.")
     (insert (second data))
     (newline)))
 
-(defun tasks-toggle-checkmark ()
+(defun tasks-toggle-checkmark (&optional no-error)
+  "Toggle the checkmark of the task at point.  If this item has a
+repeat field and we're not transitioning from complete to
+incomplete, then copy the task to its next repetition."
+
   (interactive)
-  (let ((task (tasks-parse-task nil)))
-    (unless task
-      (error "There is no task here"))
-    (let* ((marker-bounds (tasks-task-marker-bounds task))
-           (marker (tasks-task-marker task))
-           (new-map '((incomplete complete) (complete incomplete)))
-           (new-marker (or (second (assq marker new-map)) marker))
-           (new-string (second (assq new-marker tasks-meaning-markers))))
-      (save-excursion
-        (goto-char (car marker-bounds))
-        (delete-region (car marker-bounds) (cdr marker-bounds))
-        (insert new-string)))))
+  (catch 'done
+    (let ((task (tasks-parse-task nil)))
+      (unless task
+        (if no-error
+            (throw 'done nil)
+          (error "There is no task here")))
+      ;; Handle any repeats
+      ;; XXX Only for top-level tasks
+      ;; XXX Should we indicate that we've copied this item so it
+      ;; doesn't get copied again if the user deletes the next copy?
+      (let ((rep-string (tasks-task-field task "Repeat")))
+        (when (and rep-string
+                   (not (eq (tasks-task-marker task) 'complete)))
+          (let* ((date (save-excursion
+                         (if (re-search-backward tasks-date-regex nil t)
+                             (tasks-parse-date)
+                           (error "Unable to find the date of this task"))))
+                 (rep (tasks-reify-repeat
+                       (tasks-parse-repeat rep-string)
+                       date))
+                 (next (tasks-repeat-after rep date)))
+            (save-excursion
+              (tasks-jump-or-insert next t)
+              ;; Check for duplicates
+              (let ((existing (mapcar #'tasks-task-title
+                                      (tasks-day-tasks)))
+                    (next-str (tasks-unparse-date next)))
+                (if (member (tasks-task-title task) existing)
+                    (message "Already repeated on %s" next-str)
+                  (message "Repeating on %s" next-str)
+                  (insert (tasks-task-string task))))))))
+      ;; Toggle the marker
+      (let* ((marker-bounds (tasks-task-marker-bounds task))
+             (marker (tasks-task-marker task))
+             (new-map '((incomplete complete) (complete incomplete)))
+             (new-marker (or (second (assq marker new-map)) marker))
+             (new-string (second (assq new-marker tasks-meaning-markers))))
+        (save-excursion
+          (goto-char (car marker-bounds))
+          (delete-region (car marker-bounds) (cdr marker-bounds))
+          (insert new-string))))
+    t))
 
 (defun tasks-complete-date ()
   (interactive)
@@ -476,9 +700,7 @@ recognized by tasks-parse-date.")
   (or (ignore-errors
         (tasks-complete-date)
         t)
-      (ignore-errors
-        (tasks-toggle-checkmark)
-        t)
+      (tasks-toggle-checkmark t)
       (error "No date or task at point")))
 
 (defvar tasks-mode-map
@@ -500,9 +722,10 @@ A task file is simply a structured list of tasks and events,
 sorted and grouped by date.  For example,
 
 Wednesday, March 12, 2008
-   3:00p-4:00p Event
+ > 3:00p-4:00p Event
      Location: Elsewhere
  + Completed task
+     Repeat: Every day
    + Subtask
 
 Thursday, March 13, 2008
@@ -510,10 +733,17 @@ Thursday, March 13, 2008
  ~ Irrelevant task
 
 tasks-mode places few restrictions on the structure of the file,
-but does support a few conventions.  A task line must begin with
-at least one space, followed by a state indicator, followed by a
-space and then a description.  A task can be in one of three
-states:
+but does support a few conventions.  Each day is introduced by a
+date on a line by itself.  Dates can be in a number of
+formats (see `tasks-date-regexes'), but there is one canonical
+format (see `tasks-date-canonical-regex'), which defaults to the
+one shown above.  tasks-mode assumes that the dates are in sorted
+order.
+
+Under each date is a list of tasks and events for that date.  A
+task must begin with at least one space, followed by a state
+indicator, followed by a space and then a description.  A task
+can be in one of three states:
 
  + Indicates a completed task
  - Indicates an incomplete task
@@ -521,10 +751,17 @@ states:
    actually completed, but that you don't want to be reminded
    about
 
-Dates can be in a number of formats (see `tasks-date-regexes'),
-but there is one canonical format (see
-`tasks-date-canonical-regex'), which defaults to the one shown
-above.  tasks-mode assumes that the dates are in sorted order.
+Additionally, a > indicator means the entry is an event and that
+the user need not complete it.
+
+Indented two spaces under a task may be fields of that task as
+well as sub-tasks.  tasks-mode current understands one field,
+\"Repeat\", which contains an English description of when the
+task should repeat.  The task will be copied to its next
+repetition when checked off.  For the exact grammar, see
+`tasks-parse-repeat'.  A few examples are, \"Every other day\",
+\"Monthly by day of the month\", \"Every 3 weeks on Sunday,
+Monday, and Tuesday\".
 
 == Editing ==\\<tasks-mode-map>
 
