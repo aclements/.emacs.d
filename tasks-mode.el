@@ -30,6 +30,8 @@
 ;; * Finish repeat support
 ;; * Figure out how to better repeat events
 ;; * Better highlighting by expanding to entire tasks
+;; ** For incomplete tasks, highlight sub-tasks separately.
+;;    Otherwise, highlight whole top-level task
 ;; * Highlight events according to whether or not the date has passed
 ;; ** In general, events should act like tasks that get checked off
 ;;    when their end time passes
@@ -653,12 +655,13 @@ and that satisfies the given reified repeat."
     (insert (second data))
     (newline)))
 
-(defun tasks-toggle-checkmark (&optional no-error)
+(defun tasks-toggle-checkmark (&optional mark-irrelevant no-error)
   "Toggle the checkmark of the task at point.  If this item has a
 repeat field and we're not transitioning from complete to
-incomplete, then copy the task to its next repetition."
+incomplete, then copy the task to its next repetition.  With
+prefix arg, this toggles between complete and irrelevant."
 
-  (interactive)
+  (interactive "P")
   (catch 'done
     (let ((task (tasks-parse-task nil)))
       (unless task
@@ -693,7 +696,10 @@ incomplete, then copy the task to its next repetition."
       ;; Toggle the marker
       (let* ((marker-bounds (tasks-task-marker-bounds task))
              (marker (tasks-task-marker task))
-             (new-map '((incomplete complete) (complete incomplete)))
+             (new-map `((incomplete ,(if mark-irrelevant
+                                         'irrelevant 'complete))
+                        (complete incomplete)
+                        (irrelevant incomplete)))
              (new-marker (or (second (assq marker new-map)) marker))
              (new-string (second (assq new-marker tasks-meaning-markers))))
         (save-excursion
@@ -710,12 +716,18 @@ incomplete, then copy the task to its next repetition."
       (delete-region (tasks-date-beginning) (tasks-date-end))
       (insert (tasks-unparse-date date)))))
 
-(defun tasks-dwim ()
-  (interactive)
+(defun tasks-dwim (prefix-arg)
+  "Invoke `tasks-complete-date' if point is on a date, otherwise,
+invoke `tasks-toggle-checkmark'."
+
+  (interactive "P")
   (or (ignore-errors
         (tasks-complete-date)
         t)
-      (tasks-toggle-checkmark t)
+      ;; XXX This is a little unfortunate, but we need to get the
+      ;; error flag in.  That, or we could use more specific error
+      ;; codes.
+      (tasks-toggle-checkmark prefix-arg t)
       (error "No date or task at point")))
 
 (defvar tasks-mode-map
