@@ -579,14 +579,15 @@ and that satisfies the given reified repeat."
       (goto-char (match-beginning 0))
       ;; XXX This is a terribly inefficient way to do this
       (let* ((task (tasks-parse-task))
-             (bounds (if just-title
-                         (tasks-task-title-bounds task)
-                       (tasks-task-string-bounds task))))
-        (goto-char (cdr bounds))
-        (set-match-data (list (car bounds) (- (cdr bounds) 1)))
+             (task-bounds (tasks-task-string-bounds task))
+             (start (car task-bounds))
+             (end (cdr (if just-title
+                           (tasks-task-title-bounds task)
+                         task-bounds))))
+        (goto-char end)
+        (set-match-data (list start (- end 1)))
         ;; XXX Only if it's actually multi-line?
-        (put-text-property (car bounds) (- (cdr bounds) 1)
-                           'font-lock-multiline t)
+        (put-text-property start (- end 1) 'font-lock-multiline t)
         t))))
 
 (defun tasks-font-lock-incomplete (bound)
