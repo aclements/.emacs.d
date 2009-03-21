@@ -721,7 +721,7 @@ and that satisfies the given reified repeat."
   "Toggle the checkmark of the task at point.  If this item has a
 repeat field and we're not transitioning from complete to
 incomplete, then copy the task to its next repetition.  With
-prefix arg, this toggles between complete and irrelevant."
+prefix arg, this instead marks the task as irrelevant."
 
   (interactive "P")
   (catch 'done
@@ -758,10 +758,13 @@ prefix arg, this toggles between complete and irrelevant."
       ;; Toggle the marker
       (let* ((marker-bounds (tasks-task-marker-bounds task))
              (marker (tasks-task-marker task))
-             (new-map `((incomplete ,(if mark-irrelevant
-                                         'irrelevant 'complete))
-                        (complete incomplete)
-                        (irrelevant incomplete)))
+             (new-map (if mark-irrelevant
+                          '((incomplete irrelevant)
+                            (complete   irrelevant)
+                            (irrelevant irrelevant))
+                        '((incomplete complete)
+                          (complete   incomplete)
+                          (irrelevant incomplete))))
              (new-marker (or (second (assq marker new-map)) marker))
              (new-string (second (assq new-marker tasks-meaning-markers))))
         (save-excursion
