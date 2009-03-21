@@ -22,16 +22,13 @@
 
 ;;; Notes:
 
-;; * Add a Markus-Bains line
+;; * Add a Markus-Bains line or change the color of past dates
 ;; * Support for narrowing to labels
 ;; * Better automatic indentation
 ;; ** Wrap in tasks-insert-from-file
 ;; * Check malformed or out-of-order dates
 ;; * Finish repeat support
 ;; * Figure out how to better repeat events
-;; * Better highlighting by expanding to entire tasks
-;; ** For incomplete tasks, highlight sub-tasks separately.
-;;    Otherwise, highlight whole top-level task
 ;; * Highlight events according to whether or not the date has passed
 ;; ** In general, events should act like tasks that get checked off
 ;;    when their end time passes
@@ -133,12 +130,28 @@ subexpression that matches a month name as found in
   "A regular expression matching any of the forms of dates
 recognized by tasks-parse-date.")
 
-;; XXX Generate this from the markers map
 (defconst tasks-font-lock-keywords
   `((,tasks-date-regex . font-lock-keyword-face)
-    ("^ +\\- .*" . tasks-incomplete-face)
-    ("^ +\\+ .*" . tasks-completed-face)
-    ("^ +\\~ .*" . tasks-irrelevant-face)))
+    ;; Incomplete tasks need to be handled first so that incomplete
+    ;; sub-tasks can be overridden by complete or irrelevant parent
+    ;; tasks.
+    (tasks-font-lock-incomplete . tasks-incomplete-face)
+    ;; Complete and irrelevant tasks must override font-locking
+    ;; because they may encompass already highlighted sub-tasks.
+    (tasks-font-lock-complete 0 tasks-completed-face t)
+    ;; Irrelevant must come last so that irrelevant sub-tasks of
+    ;; complete parent tasks will still be highlighted as irrelevant
+    ;; and irrelevant parent tasks will mark all children as
+    ;; irrelevant regardless of if they are complete or not.
+    ;;
+    ;; Alternatively, we could make it so a complete or irrelevant
+    ;; parent task overrides all children, but this cannot be
+    ;; expressed in terms of an ordering over states alone; it would
+    ;; require different highlighters for different levels of tasks,
+    ;; or the highlighter would have to examine the parent task.  We
+    ;; take the approach we do because it is actually perfectly
+    ;; reasonable, if not a little unexpected.
+    (tasks-font-lock-irrelevant 0 tasks-irrelevant-face t)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Date parsing
@@ -278,6 +291,8 @@ canonicalized."
 
 (defun tasks-task-marker (task)
   (second (assoc (fourth task) tasks-marker-meanings)))
+
+(defalias 'tasks-task-title-bounds #'fifth)
 
 (defalias 'tasks-task-title #'sixth)
 
@@ -553,6 +568,53 @@ and that satisfies the given reified repeat."
           (error "No date selected")))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Font locking
+;;
+
+(defun tasks-font-lock-type (type just-title bound)
+  ;; Search forward for tasks of the given type
+  (let* ((marker (second (assq type tasks-meaning-markers)))
+         (start-re (concat "^ +" (regexp-quote marker) " ")))
+    (when (re-search-forward start-re bound t)
+      (goto-char (match-beginning 0))
+      ;; XXX This is a terribly inefficient way to do this
+      (let* ((task (tasks-parse-task))
+             (bounds (if just-title
+                         (tasks-task-title-bounds task)
+                       (tasks-task-string-bounds task))))
+        (goto-char (cdr bounds))
+        (set-match-data (list (car bounds) (- (cdr bounds) 1)))
+        ;; XXX Only if it's actually multi-line?
+        (put-text-property (car bounds) (- (cdr bounds) 1)
+                           'font-lock-multiline t)
+        t))))
+
+(defun tasks-font-lock-incomplete (bound)
+  (tasks-font-lock-type 'incomplete t bound))
+
+(defun tasks-font-lock-complete (bound)
+  (tasks-font-lock-type 'complete nil bound))
+
+(defun tasks-font-lock-irrelevant (bound)
+  (tasks-font-lock-type 'irrelevant nil bound))
+
+(defun tasks-font-lock-extend-region (beg end old-len)
+  ;; Extend beginning backwards by finding a line that is indented by
+  ;; no more than one space
+  (save-excursion
+    (save-match-data
+      (goto-char beg)
+      (let ((new-beg (if (re-search-backward "^ ?[^ ]" nil t)
+                         (point)
+                       (point-min))))
+        ;; Extend the end forwards in the same way
+        (goto-char end)
+        (let ((new-end (if (re-search-forward "^ ?[^ ]" nil t)
+                           (match-beginning 0)
+                         (point-max))))
+          (cons new-beg new-end))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Actions
 ;;
 
@@ -814,6 +876,8 @@ To jump to an arbitrary date using the calendar prompt, use \
   (if (boundp 'font-lock-defaults)
       (make-local-variable 'font-lock-defaults))
   (setq font-lock-defaults
-        '(tasks-font-lock-keywords nil t)))
+        '(tasks-font-lock-keywords nil t))
+  (setq font-lock-extend-after-change-region-function
+        #'tasks-font-lock-extend-region))
 
 (provide 'tasks-mode)
