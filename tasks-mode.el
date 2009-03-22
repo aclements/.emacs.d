@@ -22,9 +22,10 @@
 
 ;;; Notes:
 
-;; * Add a Markus-Bains line or change the color of past dates
 ;; * Support for narrowing to labels
 ;; * Better automatic indentation
+;; ** Wrapping of titles
+;; ** Wrapping of fields
 ;; ** Wrap in tasks-insert-from-file
 ;; * Check malformed or out-of-order dates
 ;; * Finish repeat support
@@ -32,6 +33,8 @@
 ;; * Highlight events according to whether or not the date has passed
 ;; ** In general, events should act like tasks that get checked off
 ;;    when their end time passes
+;; *** Generate text properties during font-locking for event
+;;     highlighting and overdue task highlighting?
 ;; * Support for more repeat types.  For example, Mother's day is on
 ;;   the second Sunday of May
 ;; * Support for hiding events after they have been checked off
@@ -42,6 +45,25 @@
 
 (defgroup tasks-mode ()
   "Major mode for editing tasks files.")
+
+(defconst tasks-past-date-face 'tasks-past-date-face)
+(defface tasks-past-date-face
+  '((((class color) (min-colors 88) (background light)) (:foreground "Plum1"))
+    (((class color) (min-colors 88) (background dark)) (:foreground "Cyan4"))
+    ;; XXX 16 colors?
+    (((class color) (min-colors 8)) (:foreground "cyan"))
+    (t (:inherit font-lock-keyword-face)))
+  "Face used to indicate a past date")
+
+(defconst tasks-future-date-face 'tasks-future-date-face)
+(defface tasks-future-date-face
+  '((t (:inherit font-lock-keyword-face)))
+  "Face used to indicate a future date")
+
+(defconst tasks-present-date-face 'tasks-present-date-face)
+(defface tasks-present-date-face
+  '((t (:inherit tasks-future-date-face :underline t)))
+  "Face used to indicate today's date")
 
 (defconst tasks-incomplete-face 'tasks-incomplete-face)
 (defface tasks-incomplete-face
@@ -131,7 +153,12 @@ subexpression that matches a month name as found in
 recognized by tasks-parse-date.")
 
 (defconst tasks-font-lock-keywords
-  `((,tasks-date-regex . font-lock-keyword-face)
+  `(;; tasks-font-lock-date will return the match bounds as either
+    ;; subexpression 1, 2, or 3 depending on whether it's in the past,
+    ;; present, or future.
+    (tasks-font-lock-date (1 tasks-past-date-face nil t)
+                          (2 tasks-present-date-face nil t)
+                          (3 tasks-future-date-face nil t))
     ;; Incomplete tasks need to be handled first so that incomplete
     ;; sub-tasks can be overridden by complete or irrelevant parent
     ;; tasks.
@@ -242,6 +269,13 @@ canonicalized."
               (number-to-string day)
               ", "
               (number-to-string year)))))
+
+(defun tasks-date-today ()
+  (let* ((time (decode-time))
+         (day (nth 3 time))
+         (month (nth 4 time))
+         (year (nth 5 time)))
+    (tasks-make-date-ymd year month day)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Day parsing
@@ -599,6 +633,23 @@ and that satisfies the given reified repeat."
 (defun tasks-font-lock-irrelevant (bound)
   (tasks-font-lock-type 'irrelevant nil bound))
 
+(defun tasks-font-lock-date (bound)
+  (when (re-search-forward tasks-date-regex bound t)
+    (let ((start (match-beginning 0))
+          (end (match-end 0)))
+      (goto-char start)
+      (let* ((date (tasks-parse-date))
+             (today (tasks-date-today))
+             (cmp (tasks-compare-dates date today))
+             (bounds (list start end))
+             (md (append bounds
+                         (if (eq cmp '<) bounds '(nil nil))
+                         (if (eq cmp '=) bounds '(nil nil))
+                         (if (eq cmp '>) bounds '(nil nil)))))
+        (goto-char end)
+        (set-match-data md)
+        t))))
+
 (defun tasks-font-lock-extend-region (beg end old-len)
   ;; Extend beginning backwards by finding a line that is indented by
   ;; no more than one space
@@ -676,11 +727,7 @@ and that satisfies the given reified repeat."
 
 (defun tasks-jump-to-today ()
   (interactive)
-  (let* ((time (decode-time))
-         (day (nth 3 time))
-         (month (nth 4 time))
-         (year (nth 5 time)))
-    (tasks-jump-to-date (tasks-make-date-ymd year month day))))
+  (tasks-jump-to-date (tasks-date-today)))
 
 (defun tasks-jump-or-insert (date &optional no-task)
   (interactive (list (tasks-read-date)))
