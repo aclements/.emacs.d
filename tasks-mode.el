@@ -22,6 +22,7 @@
 
 ;;; Notes:
 
+;; * XXX Fix re-font locking at date changes
 ;; * Support for narrowing to labels
 ;; * Better automatic indentation
 ;; ** Wrapping of titles
@@ -29,7 +30,8 @@
 ;; ** Wrap in tasks-insert-from-file
 ;; * Check malformed or out-of-order dates
 ;; * Finish repeat support
-;; * Figure out how to better repeat events
+;; * Figure out how to better repeat events than requiring the user to
+;;   "toggle" them
 ;; * Highlight events according to whether or not the date has passed
 ;; ** In general, events should act like tasks that get checked off
 ;;    when their end time passes
@@ -40,6 +42,11 @@
 ;; * Support for hiding events after they have been checked off
 ;; ** Probably use a field that specifies a relative time until it
 ;;    gets checked off, then change it to an absolute time
+;; * Somehow float important past-due items to today
+;; ** Use overlays?  Can't edit, but could be a hyperlink
+;; ** How to indicate ones that I care about floating versus ones I
+;;    don't?  Perhaps I should instead indicates ones I _don't_ care
+;;    about floating, except that this is the more common case.
 
 ;;; Customization:
 
@@ -808,8 +815,7 @@ prefix arg, this instead marks the task as irrelevant."
              (marker (tasks-task-marker task))
              (new-map (if mark-irrelevant
                           '((incomplete irrelevant)
-                            (complete   irrelevant)
-                            (irrelevant irrelevant))
+                            (complete   irrelevant))
                         '((incomplete complete)
                           (complete   incomplete)
                           (irrelevant incomplete))))
