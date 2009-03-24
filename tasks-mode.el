@@ -22,7 +22,6 @@
 
 ;;; Notes:
 
-;; * XXX Fix re-font locking at date changes
 ;; * Support for narrowing to labels
 ;; * Better automatic indentation
 ;; ** Wrapping of titles
@@ -673,6 +672,30 @@ and that satisfies the given reified repeat."
                          (point-max))))
           (cons new-beg new-end))))))
 
+(defvar tasks-font-lock-timer nil)
+
+(defun tasks-font-lock-timer ()
+  ;; Re-color all tasks-mode buffers
+  (let ((found nil))
+    (dolist (buf (buffer-list))
+      (with-current-buffer buf
+        (when (eq major-mode 'tasks-mode)
+          ;; With jit-lock, this is actually extremely cheap and exactly
+          ;; what we want.  With other modes, this may be too expensive.
+          (font-lock-fontify-buffer)
+          ;; Record that we found some tasks-mode buffer
+          (setq found t))))
+    ;; Reschedule if there are any tasks-mode buffers
+    (if found
+        (let* ((now (decode-time))
+               (then (encode-time 0 0 24
+                                  (fourth now) (fifth now) (sixth now))))
+          (setq tasks-font-lock-timer
+                (run-at-time then nil #'tasks-font-lock-timer)))
+      ;; Otherwise, wipe the timer so it will be restarted the next
+      ;; time a buffer goes into tasks-mode
+      (setq tasks-font-lock-timer nil))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Actions
 ;;
@@ -935,6 +958,8 @@ To jump to an arbitrary date using the calendar prompt, use \
   (setq font-lock-defaults
         '(tasks-font-lock-keywords nil t))
   (setq font-lock-extend-after-change-region-function
-        #'tasks-font-lock-extend-region))
+        #'tasks-font-lock-extend-region)
+  (unless tasks-font-lock-timer
+    (tasks-font-lock-timer)))
 
 (provide 'tasks-mode)
