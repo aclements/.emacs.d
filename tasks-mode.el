@@ -41,11 +41,16 @@
 ;; * Support for hiding events after they have been checked off
 ;; ** Probably use a field that specifies a relative time until it
 ;;    gets checked off, then change it to an absolute time
-;; * Somehow float important past-due items to today
-;; ** Use overlays?  Can't edit, but could be a hyperlink
+;; * Somehow float important past-due items to today.
+;; ** Use overlays?  Can't edit, but could be a hyperlink.  Where
+;;    would the newlines come from?
+;; ** Or it could narrow away everything in the past except past-due
+;;    items
 ;; ** How to indicate ones that I care about floating versus ones I
 ;;    don't?  Perhaps I should instead indicates ones I _don't_ care
 ;;    about floating, except that this is the more common case.
+;; ** Could probably use the same mechanism for advances.  Those
+;;    should clearly be indicated with fields.
 
 ;;; Customization:
 
@@ -59,27 +64,31 @@
     ;; XXX 16 colors?
     (((class color) (min-colors 8)) (:foreground "cyan"))
     (t (:inherit font-lock-keyword-face)))
-  "Face used to indicate a past date")
+  "Face used to indicate a past date"
+  :group 'tasks-mode)
 
 (defconst tasks-future-date-face 'tasks-future-date-face)
 (defface tasks-future-date-face
   '((t (:inherit font-lock-keyword-face)))
-  "Face used to indicate a future date")
+  "Face used to indicate a future date"
+  :group 'tasks-mode)
 
 (defconst tasks-present-date-face 'tasks-present-date-face)
 (defface tasks-present-date-face
   '((t (:inherit tasks-future-date-face :underline t)))
-  "Face used to indicate today's date")
+  "Face used to indicate today's date"
+  :group 'tasks-mode)
 
 (defconst tasks-incomplete-face 'tasks-incomplete-face)
 (defface tasks-incomplete-face
   '((((min-colors 9)))
     (t
      (:bold t)))
-  "Face used to indicate incomplete tasks.")
+  "Face used to indicate incomplete tasks."
+  :group 'tasks-mode)
 
-(defconst tasks-completed-face 'tasks-completed-face)
-(defface tasks-completed-face
+(defconst tasks-complete-face 'tasks-complete-face)
+(defface tasks-complete-face
   '((((background dark) (min-colors 9))
      (:foreground "grey60"))
     (((background light) (min-colors 9))
@@ -171,7 +180,7 @@ recognized by tasks-parse-date.")
     (tasks-font-lock-incomplete . tasks-incomplete-face)
     ;; Complete and irrelevant tasks must override font-locking
     ;; because they may encompass already highlighted sub-tasks.
-    (tasks-font-lock-complete 0 tasks-completed-face t)
+    (tasks-font-lock-complete 0 tasks-complete-face t)
     ;; Irrelevant must come last so that irrelevant sub-tasks of
     ;; complete parent tasks will still be highlighted as irrelevant
     ;; and irrelevant parent tasks will mark all children as
