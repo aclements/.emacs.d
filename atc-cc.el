@@ -112,7 +112,16 @@ This is not valid syntax in C, but can be in C-like languages."
           ((and (functionp 'vmstyle-set-c-style)
                 (string-match "/bora/" filename))
            (message "Setting style for VMware")
-           (vmstyle-set-c-style)))))
+           (vmstyle-set-c-style))
+          ((string-match "/linux-" filename)
+           (message "Setting style for Linux kernel")
+           (c-set-style "linux")
+           (setq indent-tabs-mode t))
+          ((string-match "/mcchart/" filename)
+           (message "Setting style for MCChart")
+           (c-set-style "linux")
+           (setq indent-tabs-mode t))
+          )))
 ;; Don't decompress .z files
 (mapcar
  (lambda (a)
