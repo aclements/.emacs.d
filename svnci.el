@@ -48,6 +48,8 @@
 ;; * Provide the option to revert checked-in files that don't have
 ;;   modifications after a check in, in order to update Id tags and
 ;;   the like.
+;; * Kill or at least bury diff buffers when committing so they don't
+;;   appear once the commit is done.
 
 ;;; Code:
 

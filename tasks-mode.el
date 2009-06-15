@@ -45,7 +45,8 @@
 ;; ** Use overlays?  Can't edit, but could be a hyperlink.  Where
 ;;    would the newlines come from?
 ;; ** Or it could narrow away everything in the past except past-due
-;;    items
+;;    items.  This has the disadvantage of making non-floated past-due
+;;    items _really_ invisible.
 ;; ** How to indicate ones that I care about floating versus ones I
 ;;    don't?  Perhaps I should instead indicates ones I _don't_ care
 ;;    about floating, except that this is the more common case.
