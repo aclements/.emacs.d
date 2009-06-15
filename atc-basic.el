@@ -174,7 +174,11 @@ unnecessary whitespace."
   (blink-cursor-mode -1)
 
   ;; Don't update the cscope database on every query
-  (setq cscope-do-not-update-database t))
+  (setq cscope-do-not-update-database t)
+
+  ;; Use one frame for ediff
+  (setq ediff-window-setup-function 'ediff-setup-windows-plain)
+  )
 
 ;;; General settings
 
