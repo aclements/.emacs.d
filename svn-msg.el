@@ -187,7 +187,8 @@ of status lines in the commit message's ignore block.")
        (let ((f (get-char-property p 'svn-msg-msg o)))
          (and f (funcall f o p)))))
 (put 'svn-msg-stat-line 'follow-link t)
-(put 'svn-msg-stat-line 'pointer x-sensitive-text-pointer-shape)
+(when (eq window-system 'x)
+  (put 'svn-msg-stat-line 'pointer x-sensitive-text-pointer-shape))
 
 (defvar svn-msg-status-faces
   '(("\\(?:C[ CM]\\|[ ADIMRX?!~]C\\)" svn-msg-conflict-face)
