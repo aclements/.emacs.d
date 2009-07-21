@@ -89,7 +89,7 @@ prompt for confirmation before committing."
 (defconst svnci-select-info "--Select files to commit below--\n")
 (defconst svnci-select-info-regexp (concat "^" svnci-select-info))
 
-(defvar svnci-stat-line-regexp "\\([ ACDIMRX?!~]\\)[ CM][ L][ +][ S][ K] \\(.*\\)"
+(defvar svnci-stat-line-regexp "\\([ ACDIMRX?!~]\\)[ CM][ L][ +][ S][ K][ C] *\\(.*\\)"
   "A regular expression that should match a status line in the
 output of 'svn status'.  It must contain two groups.  The first
 must match the status character and the second must match the
@@ -840,7 +840,7 @@ message."
   (let ((new-keywords
          (mapcar (lambda (re-face)
                    `(,(concat "^\\([ *] \\)" (first re-face)
-                              "[ L][ +][ S][ K] \\(.*\\)")
+                              "[ L][ +][ S][ K][ C] *\\(.*\\)")
                      (0 '(face ,(second re-face)
                           category svn-msg-stat-line))
                      (2 '(face svn-msg-path-face
