@@ -612,7 +612,8 @@ filename"
     (when filename (file-name-nondirectory filename))))
 (defun magic-buffer-list-getter-major-mode ()
   "Get the major mode"
-  mode-name)
+  ;; Emacs 23 generalizes mode-name from a string
+  (format-mode-line mode-name))
 (defun magic-buffer-list-getter-size ()
   "Get the buffer size, as a number"
   (buffer-size))
