@@ -37,3 +37,5 @@ this mode moves point to the View or Description section.
 (setq magic-mode-alist (nconc magic-mode-alist (quote (("^# A Perforce \\(Change\\|Client\\) Specification" . p4-change-mode)))))
 
 ;;;***
+
+(provide 'p4-change-mode-load)
