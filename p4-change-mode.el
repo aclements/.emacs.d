@@ -81,9 +81,13 @@ or View section."
          (cmd (append p4-change-diff-command (list path)))
          (cmd-string (mapconcat (lambda (x) x) cmd " ")))
     (message "%s..." cmd-string)
-    (let ((proc (apply #'start-process "p4diff" (concat "*diff " path "*") cmd)))
-      (process-put proc 'cmd-string cmd-string)
-      (set-process-sentinel proc #'p4-change-diff-sentinel))))
+    ;; We have to set the current directory to the best of our ability
+    ;; because Perforce puts change specs in /tmp/, but p4 diff needs
+    ;; to find the config file for the current client.
+    (let ((default-directory (getenv "PWD")))
+      (let ((proc (apply #'start-process "p4diff" (concat "*diff " path "*") cmd)))
+        (process-put proc 'cmd-string cmd-string)
+        (set-process-sentinel proc #'p4-change-diff-sentinel)))))
 
 (defun p4-change-diff-sentinel (p e)
   "A process sentinel for p4 diff commands.
