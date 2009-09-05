@@ -52,7 +52,8 @@ or View section."
     help-echo "mouse-2: run p4 diff"
     keymap ,p4-change-file-map
     follow-link t
-    pointer x-sensitive-text-pointer-shape))
+    pointer x-sensitive-text-pointer-shape
+    p4-change-file-marker t))
 
 (defvar p4-change-font-lock-keywords
   '(("^[^ \t:]*:" . font-lock-keyword-face)
@@ -75,8 +76,10 @@ or View section."
   "Run p4 diff on the file specification at point."
 
   (interactive "d")
-  (let* ((begin (previous-single-char-property-change point 'keymap))
-         (end (next-single-char-property-change point 'keymap))
+  (let* ((begin (text-property-any
+                 (previous-single-char-property-change point 'p4-change-file-marker)
+                 (+ (point) 1) 'p4-change-file-marker t))
+         (end (text-property-not-all (point) (point-max) 'p4-change-file-marker t))
          (path (buffer-substring-no-properties begin end))
          (cmd (append p4-change-diff-command (list path)))
          (cmd-string (mapconcat (lambda (x) x) cmd " ")))
@@ -121,7 +124,8 @@ this mode moves point to the View or Description section."
   (set (make-local-variable 'font-lock-defaults)
        '(p4-change-font-lock-keywords nil nil nil nil
          (font-lock-extra-managed-props
-          mouse-face help-echo keymap follow-link pointer)))
+          mouse-face help-echo keymap follow-link pointer
+          p4-change-file-marker)))
 
   ;; All text is indented by a tab
   (setq indent-tabs-mode t
