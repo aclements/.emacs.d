@@ -47,6 +47,7 @@
 
 ;; Make it easy to test for Emacs 22
 (setq emacs22 (>= emacs-major-version 22))
+(setq emacs23 (>= emacs-major-version 23))
 
 ;; Set appropriate load-path
 (defun atc:add-to-load-path-maybe (path msg append fatal)
@@ -89,3 +90,9 @@
 (load "atc-google" t)                   ; Non-fatal if missing
 (load "atc-streambase" t)
 (load "atc-vmware" t)
+(custom-set-faces
+  ;; custom-set-faces was added by Custom.
+  ;; If you edit it by hand, you could mess it up, so be careful.
+  ;; Your init file should contain only one such instance.
+  ;; If there is more than one, they won't work right.
+ '(mmm-default-submode-face ((((background dark)) (:background "DimGray")) (t (:background "LightGray")))))

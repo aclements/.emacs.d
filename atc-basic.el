@@ -143,9 +143,7 @@ unnecessary whitespace."
       "Outed major mode for editing outlines." t))
 
   ;; Misc usability variables
-  (setq load-warn-when-source-newer t
-        inhibit-startup-message     t
-        next-line-add-newlines      nil
+  (setq inhibit-startup-message     t
         x-stretch-cursor            t)
   (when emacs22
     (setq inhibit-startup-buffer-menu  t
@@ -153,14 +151,12 @@ unnecessary whitespace."
           default-indicate-buffer-boundaries t
           mouse-autoselect-window      t)
     (set-fringe-mode 5))
+  (when emacs23
+    (setq initial-scratch-message nil))
 
   ;; Improved ps-print defaults
   (setq ps-landscape-mode t
         ps-number-of-columns 2)
-
-  ;; Ignore .svn directories in completion
-  (when emacs22
-    (add-to-list 'completion-ignored-extensions ".svn/"))
 
   ;; Enable dangerous functions
   (put 'narrow-to-region 'disabled nil)
@@ -253,26 +249,36 @@ server buffers."
 If this is the last frame, just do a `save-buffers-kill-emacs'.  This
 has special knowledge of the Emacs server and will attempt to kill
 server-controlled buffers in a way that makes it feel like the frames
-popped up by new connections are independent Emacsen."
+popped up by new connections are independent Emacsen.
+
+This differs somewhat from `save-buffers-kill-terminal' in that
+it will always kill only the current frame, even if it was not
+started by emacsclient."
   (interactive "P")
-  (when (featurep 'server)
-    ;; For each window in this frame, if the buffer in that window
-    ;; came from the Emacs server, see if this is the only window
-    ;; containing that buffer and kill it if so
-    (walk-windows (lambda (wnd)
-                    (save-excursion
-                      (let ((buffer (window-buffer wnd)))
-                        (if (and server-buffer-clients
-                                 (null (cdr (get-buffer-window-list buffer))))
-                            (kill-buffer buffer)))))
-                  nil
-                  (selected-frame)))
-  ;; If there are multiple frames, kill just this frame
-  (let ((frames (frame-list)))
-    (if (and frames (cdr frames))
-        (delete-frame)
-      ;; Last frame, so kill emacs
-      (save-buffers-kill-emacs arg))))
+  (if (and (fboundp 'server-save-buffers-kill-terminal)
+           (frame-parameter (selected-frame) 'client))
+      ;; Emacs >= 23
+      (server-save-buffers-kill-terminal arg)
+    (when (and (not (fboundp 'server-save-buffers-kill-terminal))
+               (featurep 'server))
+      ;; Emacs <= 22
+      ;; For each window in this frame, if the buffer in that window
+      ;; came from the Emacs server, see if this is the only window
+      ;; containing that buffer and kill it if so
+      (walk-windows (lambda (wnd)
+                      (save-excursion
+                        (let ((buffer (window-buffer wnd)))
+                          (if (and server-buffer-clients
+                                   (null (cdr (get-buffer-window-list buffer))))
+                              (kill-buffer buffer)))))
+                    nil
+                    (selected-frame)))
+    ;; If there are multiple frames, kill just this frame
+    (let ((frames (frame-list)))
+      (if (and frames (cdr frames))
+          (delete-frame)
+        ;; Last frame, so kill emacs
+        (save-buffers-kill-emacs arg)))))
 (defun atc:setup-kill-dwim ()
   "Changes \C-x\C-c to use `kill-server-or-frame-or-emacs'.  This goes
 well with `atc:setup-server'."
