@@ -107,12 +107,6 @@
 (defmodefeature plain-newline
   (if (eq (key-binding "\C-m") 'newline-and-indent)
       (local-set-key "\C-m" (function newline))))
-(defun sh-newline-and-actually-indent ()
-  (interactive)
-  (sh-newline-and-indent)
-  (indent-according-to-mode))
-(defmodefeature shell-newline
-  (local-set-key "\C-m" (function sh-newline-and-actually-indent)))
 (defmodefeature highlight-unhappy
   (font-lock-add-keywords nil
                           '(("\\<\\(FIXME\\|TODO\\|XXX\\)\\>"

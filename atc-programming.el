@@ -105,7 +105,7 @@
 ;; Shell
 (atc:add-mode-features 'sh-mode-hook
                        '(;autofill
-                         filladapt flyspell-prog shell-newline))
+                         filladapt flyspell-prog))
 
 ;; HTML, text, and Subversion log messages
 (atc:add-mode-features '(html-mode-hook text-mode-hook)
