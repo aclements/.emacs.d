@@ -103,8 +103,19 @@
                        '(autofill filladapt flyspell-prog))
 
 ;; Shell
+(defmodefeature sh-choose-style
+  (let ((filename (buffer-file-name)))
+    (cond ((not filename))
+          ((or (string-match "/jos/" filename)
+               (string-match "/6.828/" filename))
+           (message "Setting style for 6.828")
+           (setq sh-basic-offset 8
+                 tab-width 8
+                 indent-tabs-mode t)))))
+
 (atc:add-mode-features 'sh-mode-hook
                        '(;autofill
+                         sh-choose-style
                          filladapt flyspell-prog))
 
 ;; HTML, text, and Subversion log messages
