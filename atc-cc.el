@@ -121,6 +121,13 @@ This is not valid syntax in C, but can be in C-like languages."
            (message "Setting style for MCChart")
            (c-set-style "linux")
            (setq indent-tabs-mode t))
+          ((string-match "/postgresql-8" filename)
+           (message "Setting style for Postgres")
+           (c-set-style "bsd")
+           (setq c-basic-offset 4
+                 tab-width 4
+                 indent-tabs-mode t)
+           (c-set-offset 'case-label '+))
           )))
 ;; Don't decompress .z files
 (mapcar
