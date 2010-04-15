@@ -174,6 +174,10 @@ unnecessary whitespace."
 
   ;; Use one frame for ediff
   (setq ediff-window-setup-function 'ediff-setup-windows-plain)
+
+  ;; Disable VC.  I never use it an it can seriously slow down Emacs
+  ;; in some situations.
+  (setq vc-handled-backends ())
   )
 
 ;;; General settings
