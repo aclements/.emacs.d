@@ -138,12 +138,23 @@
   ;; Disable French and German quotes
   (setq font-latex-quote-list '(("``" "''"))))
 
+(defun tex-choose-default-command ()
+  (let ((dir (file-name-directory (buffer-file-name))))
+    (if (or (file-exists-p (expand-file-name "Makefile" dir))
+            (file-exists-p (expand-file-name "GNUmakefile" dir))
+            (file-exists-p (expand-file-name "makefile" dir)))
+        (setq TeX-command-default "Make")
+        (setq TeX-command-default "Rubber"))))
+
 (atc:autoload-mode 'latex-mode "tex-site" "\\.tex$")
 (atc:add-mode-features 'LaTeX-mode-hook
                        '(autofill-code filladapt flyspell-full
                                   latex-bindings latex-faces))
 (eval-after-load "tex"
   '(progn
+     (add-to-list 'TeX-command-list
+                  '("Make" "make" TeX-run-TeX t t)
+                  t)
      (add-to-list 'TeX-command-list
                   '("Make PS" "make %f" TeX-run-compile t t)
                   t)
@@ -156,8 +167,7 @@
                   '("Rubber" "rubber %(rubberarg) -Wrefs -Wmisc %t"
                     TeX-run-compile nil (latex-mode)))
      (add-hook 'LaTeX-mode-hook
-               (lambda ()
-                 (setq TeX-command-default "Rubber")))
+               'tex-choose-default-command)
 
      ;; Use evince if available
      (when (executable-find "evince")
