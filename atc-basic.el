@@ -178,6 +178,10 @@ unnecessary whitespace."
   ;; Disable VC.  I never use it an it can seriously slow down Emacs
   ;; in some situations.
   (setq vc-handled-backends ())
+
+  ;; Color completion
+  (when (load "color-completion/color-completion" t)
+    (global-color-completion t))
   )
 
 ;;; General settings
