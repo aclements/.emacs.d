@@ -1019,6 +1019,16 @@ In the future, this may employ optimizations such as caching."
                        group-format
                        plist
                        indent-level))
+              ;; XXX This newline can cause
+              ;; Debugger entered--Lisp error: (wrong-type-argument stringp nil)
+              ;;   looking-at(nil)
+              ;;   c-forward-sws()
+              ;;   c-mask-paragraph(nil t do-auto-fill)
+              ;;   c-do-auto-fill()
+              ;;   self-insert-command(1)
+              ;;   newline()
+              ;; Somehow the default value of auto-fill-function can
+              ;; become c-do-auto-fill, which breaks everything.
               (newline)
               (magic-buffer-list-put-prop here (point)
                                           'group plist)

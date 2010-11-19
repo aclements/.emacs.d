@@ -129,12 +129,14 @@ This is not valid syntax in C, but can be in C-like languages."
                  indent-tabs-mode t)
            (c-set-offset 'case-label '+))
           )))
-;; Don't decompress .z files
-(mapcar
- (lambda (a)
-   (when (string-match "\\\\\\.g\\?z" (aref a 0))
-     (aset a 0 (replace-match "\\.gz" t t (aref a 0)))))
- jka-compr-compression-info-list)
+;; Don't decompress .z files.  This stopped working in Emacs 23.2 and
+;; I don't use it any more.
+;;
+;; (mapcar
+;;  (lambda (a)
+;;    (when (string-match "\\\\\\.g\\?z" (aref a 0))
+;;      (aset a 0 (replace-match "\\.gz" t t (aref a 0)))))
+;;  jka-compr-compression-info-list)
 
 ;;; Set up the mode itself
 
