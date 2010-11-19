@@ -198,9 +198,9 @@
 ;(put 'latex-mode 'flyspell-mode-predicate 'tex-mode-flyspell-verify)
 
 ;; Assembly
-(atc:autoload-mode '8051-mode "8051-mode" "\\.asm$")
-(atc:add-mode-features '8051-mode-hook '(autofill filladapt
-                                                  flyspell-prog))
+;;(atc:autoload-mode '8051-mode "8051-mode" "\\.asm$")
+;;(atc:add-mode-features '8051-mode-hook '(autofill filladapt
+;;                                                  flyspell-prog))
 
 ;; RSCC Grammar
 (atc:autoload-mode 'rsccg-mode "rsccg-mode" "\\.g$")
@@ -238,18 +238,28 @@
                '(latex-mode "\\.lhs$" literate-haskell)))
 
 ;; XML
-(when (load "nxml-mode/rng-auto" t)
-  (add-to-list 'auto-mode-alist
-               '("\\.\\(xml\\|xsl\\|rng\\|xhtml\\)\\'" . nxml-mode))
-  ;; Based on http://www.emacswiki.org/cgi-bin/wiki/NxmlMode
-  (fset 'xml-mode 'nxml-mode)
-  (fset 'html-mode 'nxml-mode)
-  (if (boundp 'magic-mode-alist)
-      ;; Emacs 22
-      (add-to-list 'magic-mode-alist '("<\\?xml " . nxml-mode))
-    (add-hook 'hack-local-variables-hook
-              (lambda ()
-                (save-excursion
-                  (goto-char (point-min))
-                  (when (looking-at "^<\\?xml ")
-                    (nxml-mode)))))))
+(if (fboundp 'nxml-mode)
+    ;; Emacs 23
+    (progn
+      (fset 'html-mode 'nxml-mode)
+      (add-to-list 'magic-mode-alist '("<\\?xml " . nxml-mode)))
+  ;; Emacs <= 22
+  (when (load "nxml-mode/rng-auto" t)
+    (add-to-list 'auto-mode-alist
+                 '("\\.\\(xml\\|xsl\\|rng\\|xhtml\\)\\'" . nxml-mode))
+    ;; Based on http://www.emacswiki.org/cgi-bin/wiki/NxmlMode
+    (fset 'xml-mode 'nxml-mode)
+    (fset 'html-mode 'nxml-mode)
+    (if (boundp 'magic-mode-alist)
+        ;; Emacs 22
+        (add-to-list 'magic-mode-alist '("<\\?xml " . nxml-mode))
+      ;; Emacs <= 21
+      (add-hook 'hack-local-variables-hook
+                (lambda ()
+                  (save-excursion
+                    (goto-char (point-min))
+                    (when (looking-at "^<\\?xml ")
+                      (nxml-mode))))))))
+(when (fboundp 'nxml-mode)
+  (atc:add-mode-features 'nxml-mode-hook
+                         '(flyspell-full autofill)))
