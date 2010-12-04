@@ -186,14 +186,17 @@ containing point."
                                 (format "Context error (%s)"
                                         (error-message-string err))))))
                         (when context
-                          `((t ,context-prefix) ,context))))
+                          `((t ,context-prefix)
+                            ,(replace-regexp-in-string "%" "%%"
+                                                       context t t)))))
                     (progn
                       ;; No context.  Fake the line that should be
                       ;; under the header-line
                       (vertical-motion -1)
                       (let ((line
                              (show-context-mode-get-visible-line)))
-                        `((t ,top-level-prefix) ,line))))))))
+                        `((t ,top-level-prefix)
+                          ,(replace-regexp-in-string "%" "%%" line t t)))))))))
       ;; Cache the result (XXX This can thrash with multiple windows
       ;; displaying the same buffer, but probably isn't noticeable
       ;; anyways)
