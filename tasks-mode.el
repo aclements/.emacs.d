@@ -29,6 +29,11 @@
 ;; ** Wrap in tasks-insert-from-file
 ;; * Check malformed or out-of-order dates
 ;; * Finish repeat support
+;; ** Parser is incomplete
+;; ** Insertion should account for time
+;; ** Context-sensitive repeat can be annoying.  Perhaps the repeat
+;;    should be a specification of a set of days and the repeat should
+;;    be the next day matching that set.
 ;; * Figure out how to better repeat events than requiring the user to
 ;;   "toggle" them
 ;; * Highlight events according to whether or not the date has passed
@@ -304,6 +309,7 @@ canonicalized."
                          (match-end 0)
                        (point-min))))
         (max-bound (save-excursion
+                     (end-of-line)
                      (if (re-search-forward tasks-date-regex nil t)
                          (match-beginning 0)
                        (point-max)))))
@@ -319,6 +325,14 @@ canonicalized."
         (setq tasks (cons task tasks))
         (goto-char (cdr (tasks-task-string-bounds task))))
       (reverse tasks))))
+
+(defun tasks-insertion-point ()
+  "Return the point for inserting new tasks into the day at point."
+  (save-excursion
+    (let ((bounds (tasks-day-bounds)))
+      (goto-char (first bounds))
+      (re-search-forward "^$" (second bounds) 'limit)
+      (point))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Task parsing
@@ -842,6 +856,7 @@ prefix arg, this instead marks the task as irrelevant."
                 (if (member (tasks-task-title task) existing)
                     (message "Already repeated on %s" next-str)
                   (message "Repeating on %s" next-str)
+                  (goto-char (tasks-insertion-point))
                   (insert (tasks-task-string task))))))))
       ;; Toggle the marker
       (let* ((marker-bounds (tasks-task-marker-bounds task))
