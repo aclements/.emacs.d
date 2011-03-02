@@ -1216,8 +1216,7 @@ In the future, this may employ optimizations such as caching."
          (window-split (nth 5 state)))
     (if (and window-split
              (window-live-p orig-window))
-        (save-selected-window
-          (select-window orig-window)
+        (with-selected-window orig-window
           ;; Be careful not to alter with the buffer display time
           (let ((orig-buffer-display-time
                  (with-current-buffer buffer
