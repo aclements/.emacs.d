@@ -73,6 +73,11 @@ This is not valid syntax in C, but can be in C-like languages."
         (cons '("\\(\\\\\\)(" (1 "."))
               font-lock-syntactic-keywords)))
 
+;; Force linux style to use tabs
+(eval-after-load 'cc-styles
+  '(let ((linux-style (cdr (assoc "linux" c-style-alist))))
+     (c-add-style "linux" (cons '(indent-tabs-mode . t) linux-style))))
+
 (defmodefeature c-choose-style
   (let ((filename (buffer-file-name))
         (hostname (system-name)))
