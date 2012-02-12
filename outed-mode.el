@@ -1,11 +1,11 @@
 ;;; outed-mode.el --- Simple outline editing
 
-;; Copyright (C) 2007 Austin Clements
+;; Copyright (C) 2007--2012 Austin Clements
 
 ;; Authors:    Austin Clements (amdragon@mit.edu)
 ;; Maintainer: Austin Clements (amdragon@mit.edu)
 ;; Created:    10-Sep-2007
-;; Version:    0.1
+;; Version:    0.2
 
 ;; This program is free software; you can redistribute it and/or modify it under
 ;; the terms of the GNU General Public License as published by the Free Software
@@ -254,7 +254,7 @@ the specified level."
 node at the specified level."
   (if (= level 0)
       ""
-    (concat (make-string (+ level 1) ?\ ))))
+    (make-string (+ level 1) ?\ )))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Editing
@@ -517,6 +517,8 @@ and re-indents it appropriately."
   '(outed-level-1 outed-level-2 outed-level-3
     outed-level-4 outed-level-5 outed-level-6))
 
+;; XXX This would probably be way simpler with text properties, since
+;; there would be nothing to synchronize.
 (defun outed-jit-fontify (start end)
   "Highlight the nodes between start and end according to their
 indentation.  Note that this first expands start and end to
@@ -532,7 +534,7 @@ enclose the nodes that enclose the initial start and end."
     ;; Create face overlays for all nodes that overlap with the
     ;; font-lock region
     (while (< (point) end)
-      (let* ((level (min (outed-level) (- (length outed-faces) 1)))
+      (let* ((level (outed-level))
              (n-start (point))
              (body-start (if (and outed-hide-leading-stars
                                   (eql (char-after (point)) ?\*))
@@ -543,12 +545,12 @@ enclose the nodes that enclose the initial start and end."
                            n-start))
              (n-end (progn (outed-end-of-node)
                            (point)))
-             (face (nth level outed-faces)))
+             (face (nth (min level (- (length outed-faces) 1)) outed-faces)))
         (unless (= n-start body-start)
-          (setq overlays (cons (list n-start body-start 'outed-hide)
+          (setq overlays (cons (list n-start body-start 'outed-hide level)
                                overlays)))
         (if face
-            (setq overlays (cons (list body-start n-end face) overlays)))
+            (setq overlays (cons (list body-start n-end face level) overlays)))
         (outed-next-node)))
 
     ;; Bring the actual overlays up to speed
@@ -564,10 +566,11 @@ enclose the nodes that enclose the initial start and end."
 overlay specification.  This can be thought of as clearing the
 Outed highlighting overlays between start and end and creating
 new ones according to the specification, which must be a list
-of (start end face) tuples.  In reality, to reduce the impact on
-the display code, this synchronizes the overlays between start
-and end with the specification.  Thus, if an existing overlay
-matches one in the specification, it will be reused."
+of (start end face level) tuples.  In reality, to reduce the
+impact on the display code, this synchronizes the overlays
+between start and end with the specification.  Thus, if an
+existing overlay matches one in the specification, it will be
+reused."
   (overlay-recenter end)
   (let ((news-box (cons nil overlays)))
 
@@ -579,13 +582,15 @@ matches one in the specification, it will be reused."
         (let ((ostart (overlay-start existing))
               (oend   (overlay-end existing))
               (oface  (overlay-get existing 'face))
+              (olevel (overlay-get existing 'outed-level))
               (news   news-box)
               (keep   nil))
           (while (consp (cdr news))
             (let ((new (cadr news)))
               (if (and (=  ostart (car new))
                        (=  oend   (cadr new))
-                       (eq oface  (caddr new)))
+                       (eq oface  (caddr new))
+                       (=  olevel (cadddr new)))
                   (progn
                     (setq keep t)
                     ;; Remove this overlay from the list
@@ -609,8 +614,13 @@ matches one in the specification, it will be reused."
 
     ;; Create the overlays that weren't found
     (dolist (new (cdr news-box))
-      (let ((ovl (make-overlay (car new) (cadr new) nil nil t)))
-        (overlay-put ovl 'face (caddr new))
+      (let ((ovl (make-overlay (car new) (cadr new) nil nil t))
+            (face (caddr new))
+            (level (cadddr new)))
+        (overlay-put ovl 'face face)
+        (overlay-put ovl 'outed-level level)
+        (when (> level 0)
+          (overlay-put ovl 'wrap-prefix (outed-make-continuation level)))
         (overlay-put ovl 'outed t)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
