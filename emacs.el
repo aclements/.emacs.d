@@ -8,6 +8,15 @@
 
 (message "Loading .emacs")
 
+;; XXX Figure out when auto-fill-function gets set globally to
+;; c-do-auto-fill and breaks everything.
+(defun amdragon-monitor-auto-fill ()
+  (if (eq (default-value 'auto-fill-function) 'c-do-auto-fill)
+      (message (propertize ">>>> auto-fill-function set to c-do-auto-fill <<<<"
+                           'face '(:background "red" :weight bold)))))
+(setq amdragon-monitor-auto-fill-timer
+      (run-with-idle-timer 0.1 t #'amdragon-monitor-auto-fill))
+
 ;; Things to fix
 ;; * Make run-scheme use xscheme from the get-go
 ;; * refill in latex-mode
@@ -87,9 +96,15 @@
 (atc:basic-setup-all)
 (load "atc-programming")
 
+(load "atc-notmuch" t)
+
 (load "atc-google" t)                   ; Non-fatal if missing
 (load "atc-streambase" t)
 (load "atc-vmware" t)
+
+(load "git-commit-load" t)
+(add-hook 'git-commit-mode-hook 'flyspell-mode)
+
 (custom-set-faces
   ;; custom-set-faces was added by Custom.
   ;; If you edit it by hand, you could mess it up, so be careful.
@@ -102,4 +117,4 @@
   ;; If you edit it by hand, you could mess it up, so be careful.
   ;; Your init file should contain only one such instance.
   ;; If there is more than one, they won't work right.
- )
+ '(quack-programs (quote ("mzscheme" "bigloo" "csi" "csi -hygienic" "gosh" "gracket" "gsi" "gsi ~~/syntax-case.scm -" "guile" "kawa" "mit-scheme" "racket" "racket -il typed/racket" "rs" "scheme" "scheme48" "scsh" "sisc" "stklos" "sxi"))))
