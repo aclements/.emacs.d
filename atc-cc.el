@@ -82,6 +82,8 @@ This is not valid syntax in C, but can be in C-like languages."
   (let ((filename (buffer-file-name))
         (hostname (system-name)))
     (cond ((not filename))
+          ;; XXX As of 2011-08, JOS takes care of its own indentation,
+          ;; but I'm keeping this for old code.
           ((or (string-match "/jos/" filename)
                (string-match "/6.828/" filename))
            (message "Setting style for 6.828")
@@ -118,7 +120,8 @@ This is not valid syntax in C, but can be in C-like languages."
                 (string-match "/bora/" filename))
            (message "Setting style for VMware")
            (vmstyle-set-c-style))
-          ((string-match "/linux-" filename)
+          ((or (string-match "/linux-" filename)
+               (string-match "/scale-linux" filename))
            (message "Setting style for Linux kernel")
            (c-set-style "linux")
            (setq indent-tabs-mode t))
