@@ -470,7 +470,7 @@
   ;; to the function
   (if (auto-proto-decl-is-file-scope decl)
       (list (buffer-file-name))
-    (concat
+    (append
      ;; Search this file first
      (list (buffer-file-name))
      ;; Then other files we've been explicitly told about
