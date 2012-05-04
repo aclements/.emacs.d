@@ -24,6 +24,17 @@
 ;; Tabs are evil.  Use spaces to indent
 (setq-default indent-tabs-mode nil)
 
+;; Make tabs visible
+(defface show-tab-face '((t :strike-through "#4a4a00"))
+  "Face to use to highlight tabs.")
+
+(defun show-tabs ()
+  (interactive)
+  (unless buffer-display-table
+    (setq buffer-display-table (make-display-table)))
+  (aset buffer-display-table ?\t
+        (vector (make-glyph-code ?\t 'show-tab-face))))
+
 ;; Autoindent after a line
 (global-set-key "\C-m" 'newline-and-indent)
 
