@@ -1169,7 +1169,11 @@ In the future, this may employ optimizations such as caching."
           (select-window (next-window))
           (setq window-split t))
       ;; Resize this window to make it fit
-      (enlarge-window (- buffer-lines (window-height))))
+      (let ((delta (- buffer-lines (window-height))))
+        ;; Only resize if we can (this will fail, for example, if the
+        ;; current window is the only window in the frame).
+        (when (/= (window-resizable nil delta) 0)
+          (enlarge-window delta))))
     (switch-to-buffer buffer)
     (set-window-start (selected-window) 0)
     (goto-char buffer-point)
