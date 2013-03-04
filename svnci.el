@@ -209,7 +209,9 @@ control, this first prompts to add the file."
     (error "Current buffer is not visiting a file"))
 
   ;; Find out if this file is unversioned or ignored
-  (let ((status (svnci-get-status (list buffer-file-name) t nil)))
+  (let ((status (svnci-get-status (list (file-name-nondirectory
+                                         buffer-file-name))
+                                  t nil)))
     (unless (= (length status) 1)
       (error "Failed to get status for %s" buffer-file-name))
 
@@ -397,13 +399,13 @@ file path."
     (let* ((args (list* "--non-interactive" "--ignore-externals" paths))
            (args (if non-recursive (cons "-N" args) args))
            (args (if quiet (cons "-q" args) args))
-           (res  (apply #'call-process "svn" nil t nil "status" args)))
+           (res  (apply #'process-file "svn" nil t nil "status" args)))
       ;; XXX It probably printed an error message
       (cond ((stringp res)
              (error "svn status exited with %s" res))
             ((/= res 0)
              (error "svn status exited with code %d" res))))
-
+    
     ;; Parse the output
     (let (lines)
       (goto-char (point-min))
@@ -666,13 +668,10 @@ PREVIEW controls whether or not this is actually a dry-run.  See
           (unless (y-or-n-p "Really commit? ")
             (error "Commit aborted")))))
 
-    ;; Save the message to a temporary file
-    (setq message-file (make-temp-file "svnci"))
-    (write-region (point-min) message-end message-file nil 0)
-
     ;; Create commit buffer
     (let ((original-file buffer-file-name)
-          (directory default-directory))
+          (directory default-directory)
+          (commit-message (buffer-substring (point-min) message-end)))
       (pop-to-buffer "*svn commit*")
       ;; Make sure svn is run from the right directory
       (setq default-directory directory)
@@ -687,7 +686,7 @@ PREVIEW controls whether or not this is actually a dry-run.  See
                      ;; Be paranoid and try to exert as much control
                      ;; over the commit as possible
                      svnci-non-recursive ,(not need-recursive)
-                     svnci-message-file ,message-file
+                     svnci-commit-message ,commit-message
                      svnci-original-file ,original-file
                      svnci-output ,(current-buffer)
                      svnci-window ,(selected-window)
@@ -727,15 +726,15 @@ If the add process succeeds, this starts the commit process."
 
   (let ((svnci-to-commit (plist-get plist 'svnci-to-commit))
         (svnci-non-recursive (plist-get plist 'svnci-non-recursive))
-        (svnci-message-file (plist-get plist 'svnci-message-file)))
+        (svnci-commit-message (plist-get plist 'svnci-commit-message)))
     (unless (null svnci-to-commit)
-      (let* ((cmd (list* "-F" svnci-message-file "--non-interactive"
+      (let* ((cmd (list* "-F" "-" "--non-interactive"
                          "--" svnci-to-commit))
              (cmd (if svnci-non-recursive (cons "-N" cmd) cmd))
              (cmd (list* "svn" "commit" cmd)))
         (svnci-commit-execute "svn commit" cmd
                               #'svnci-commit-commit-sentinel
-                              plist)))))
+                              plist svnci-commit-message)))))
 
 (defun svnci-commit-commit-sentinel (process event)
   "'svn commit' process sentinel.
@@ -751,13 +750,10 @@ and buries the process output buffer."
              (not svnci-preview))
         (progn
           ;; Commit succeeded
-          (let ((svnci-message-file (plist-get plist 'svnci-message-file))
-                (svnci-original-file (plist-get plist 'svnci-original-file))
+          (let ((svnci-original-file (plist-get plist 'svnci-original-file))
                 (svnci-window (plist-get plist 'svnci-window)))
             ;; Kill the buffer and delete the file containing the
-            ;; original commit message as well as the trimmed commit
-            ;; message
-            (delete-file svnci-message-file)
+            ;; original commit message 
             (let ((msg-buf (find-buffer-visiting svnci-original-file)))
               (when msg-buf
                 ;; Now that we've committed, don't complain that we're
@@ -783,7 +779,7 @@ and buries the process output buffer."
       (when noninteractive
         (kill-emacs (if (= exit-status 0) 1 exit-status))))))
 
-(defun svnci-commit-execute (name cmd sentinel plist)
+(defun svnci-commit-execute (name cmd sentinel plist &optional stdin)
   "`svnci-commit' helper to start a new process."
 
   (let* ((svnci-output (plist-get plist 'svnci-output))
@@ -796,10 +792,12 @@ and buries the process output buffer."
     (terpri)
     (when svnci-preview
       (setq cmd (cons "true" cmd)))
-    (let ((process (apply #'start-process name (current-buffer) cmd)))
+    (let ((process (apply #'start-file-process name (current-buffer) cmd)))
       (set-process-plist process plist)
       (set-process-filter process #'svnci-commit-filter)
-      (set-process-sentinel process sentinel))))
+      (set-process-sentinel process sentinel)
+      (if stdin (process-send-string process stdin))
+      (process-send-eof process))))
 
 (defun svnci-commit-filter (process output)
   "`svnci-commit' process filter.

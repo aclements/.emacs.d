@@ -417,7 +417,7 @@ the file was just added), then simply visit the file."
           (when ro-map
             (define-key (cdr ro-map) "q" #'svn-msg-quit-diff)))
         ;; Retrieve the diff, asynchronously
-        (let ((proc (apply #'start-process name (current-buffer)
+        (let ((proc (apply #'start-file-process name (current-buffer)
                            "svn" "diff" (append svn-msg-diff-args
                                                 (list path)))))
           ;; Filter the process in the normal way, but don't move
