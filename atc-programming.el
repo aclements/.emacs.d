@@ -10,16 +10,23 @@
     (show-paren-mode t))
 
 ;; Adapt those fills
-(if (require 'filladapt nil t)
-    (progn
-      ;; Disable built-in adaptive filling
-      (setq adaptive-fill-mode nil)
-      ;; This is a little weird.  filladapt overloads a bunch of
-      ;; autofill's functions, so just by loading it and setting the
-      ;; mode variable it will come to life.  The modeline won't be
-      ;; updated unless turn-on-filladapt-mode is called from every
-      ;; buffer.
-      (setq filladapt-mode-line-string " F*")))
+;; XXX (2013-05-01) filladapt apparently hasn't been updated since the
+;; 90's and since it replaces much of Emacs' filling mechanism, has
+;; started breaking more things.
+;; (if (require 'filladapt nil t)
+;;     (progn
+;;       ;; Disable built-in adaptive filling
+;;       ;; XXX (2012-09-16) Setting this screws up Python string filling
+;;       ;; even if filladapt isn't enabled in python-mode.  The
+;;       ;; filladapt documentation doesn't say anything about setting
+;;       ;; this, so hopefully this was a mistake.
+;; ;;      (setq adaptive-fill-mode nil)
+;;       ;; This is a little weird.  filladapt overloads a bunch of
+;;       ;; autofill's functions, so just by loading it and setting the
+;;       ;; mode variable it will come to life.  The modeline won't be
+;;       ;; updated unless turn-on-filladapt-mode is called from every
+;;       ;; buffer.
+;;       (setq filladapt-mode-line-string " F*")))
 
 ;; Tabs are evil.  Use spaces to indent
 (setq-default indent-tabs-mode nil)
@@ -77,7 +84,7 @@
 ;; Python
 (unless emacs22
   (atc:autoload-mode 'python-mode "python-mode" "\\.py$" "python"))
-(atc:add-mode-features 'python-mode-hook '(filladapt flyspell-prog))
+(atc:add-mode-features 'python-mode-hook '(flyspell-prog))
 
 ;; MIT Scheme
 ;(atc:autoload-mode 'scheme-mode "xscheme" "\\.scm$")
