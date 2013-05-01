@@ -286,9 +286,4 @@
   (when-ispell-works (flyspell-prog-mode)))
 
 ;; Javascript
-(when (fboundp 'js-mode)
-  ;; Use js-mode (aka espresso-mode) instead of js2-mode, since
-  ;; js2-mode is slow, buggy, and can't indent worth a darn.
-  (add-to-list 'auto-mode-alist '("\\.js" . js-mode))
-  ;; And load flyspell
-  (add-hook 'js-mode-hook #'atc:flyspell-prog-mode))
+(add-hook 'js-mode-hook #'atc:flyspell-prog-mode)
