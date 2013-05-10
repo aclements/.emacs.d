@@ -158,8 +158,9 @@ This is not valid syntax in C, but can be in C-like languages."
                        '(autofill flyspell-prog highlight-unhappy
                                   final-newline-always c-defun-jump
                                   c-auto-hungry c-filladapt
-                                  c-magic-punctuation c-show-func
-                                  c-compile c-choose-style))
+                                  ;;c-magic-punctuation
+                                  c-choose-style c-show-func
+                                  c-compile ))
 ;; Java features
 (atc:add-mode-features 'java-mode-hook
                        '(java-find-file java-fix-generics))
@@ -167,3 +168,21 @@ This is not valid syntax in C, but can be in C-like languages."
 (atc:add-mode-features 'perl-mode-hook
                        '(flyspell-prog final-newline-always
                          c-choose-style))
+
+(defun atc--set-c-cleanup-list ()
+  ;; This is insane.  Since c-cleanup-list is a style variable, if we
+  ;; modify it directly during c-mode-common-hook and a file or dir
+  ;; local variable sets a new C style (a common practice), then our
+  ;; changes will be overridden.  Hence we do it after local variables
+  ;; have been applied.
+  (add-hook 'hack-local-variables-hook
+            (lambda ()
+              ;; Undo most of the stupid things auto-newline mode does
+              (add-to-list 'c-cleanup-list 'brace-else-brace)
+              (add-to-list 'c-cleanup-list 'brace-elseif-brace)
+              (add-to-list 'c-cleanup-list 'brace-catch-brace)
+              (add-to-list 'c-cleanup-list 'defun-close-semi)
+              (add-to-list 'c-cleanup-list 'list-close-comma))
+            t t))
+
+(add-hook 'c-mode-common-hook 'atc--set-c-cleanup-list t)
