@@ -14,11 +14,9 @@
 (defun atc:defluff ()
   "Disabled frame fluff.  This includes the tool bar, menu bar, and
 scroll bar."
-  ;; These are predicated to avoid autoloading modules solely for the
-  ;; purpose of disabling them (ie, the tool-bar module)
-  (if tool-bar-mode (tool-bar-mode -1))
-  (if menu-bar-mode (menu-bar-mode -1))
-  (if scroll-bar-mode (scroll-bar-mode -1)))
+  (setq tool-bar-mode nil
+        menu-bar-mode nil
+        scroll-bar-mode nil))
 
 (defun atc:set-frame-colors (frame)
   "Set the frame color scheme for `frame'."
