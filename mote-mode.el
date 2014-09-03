@@ -77,13 +77,55 @@
 (defvar mote-mode-keywords
   '(("^\\[\\[.*\\]\\]$" . mote-mode-title-face)))
 
+(defun mote-mode-follow-link (url)
+  (let ((process-connection-type nil)
+        (default-directory
+          (file-name-as-directory
+           (concat (file-name-directory buffer-file-name)
+                   "wiki2-data"))))
+    (start-process "" nil "xdg-open" url)))
+
+(defun mote-mode-jit-lock (start end)
+  (mote-mode-jit-clear start end)
+  (goto-char start)
+  (while (re-search-forward "!\\[[^]]*\\](\\([^)]+\\))" end t)
+    (when (fboundp 'flyspell-delete-region-overlays)
+      (flyspell-delete-region-overlays (match-beginning 1) (match-end 1)))
+    (make-button (match-beginning 1) (match-end 1)
+                 'mote-mode-jit t
+                 'action '(lambda (button)
+                            (mote-mode-follow-link (button-label button)))
+                 'follow-link t
+                 )))
+
+(defun mote-mode-jit-clear (start end)
+  (remove-overlays start end 'mote-mode-jit t))
+
+(defun mote-mode-inhibit-flyspell (start end x)
+  (setq end (save-excursion (goto-char end) (line-end-position)))
+  (save-excursion
+    (goto-char start)
+    (forward-line 0)
+    (catch 'return
+      (while (re-search-forward "!\\[[^]]*\\](\\([^)]+\\))" end t)
+        (when (and (<= (match-beginning 1) start) (< start (match-end 1)))
+          (throw 'return t))))))
+
 (define-minor-mode mote-mode
   "Minor mode for editing and navigating files composed of
 \"motes\", each of which has a date, title, and body text."
   nil " Mote" nil
 
   (if mote-mode
-      (font-lock-add-keywords nil mote-mode-keywords)
-    (font-lock-remove-keywords nil mote-mode-keywords)))
+      (progn
+        (add-hook 'flyspell-incorrect-hook #'mote-mode-inhibit-flyspell nil t)
+        (font-lock-add-keywords nil mote-mode-keywords)
+        (jit-lock-register #'mote-mode-jit-lock))
+    (font-lock-remove-keywords nil mote-mode-keywords)
+    (jit-lock-unregister #'mote-mode-jit-lock)
+    (remove-hook 'flyspell-incorrect-hook #'mote-mode-inhibit-flyspell t)
+    (save-restriction
+      (widen)
+      (mote-mode-jit-clear (point-min) (point-max)))))
 
 (provide 'mote-mode)
