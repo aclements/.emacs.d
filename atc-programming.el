@@ -85,6 +85,7 @@
 (unless emacs22
   (atc:autoload-mode 'python-mode "python-mode" "\\.py$" "python"))
 (atc:add-mode-features 'python-mode-hook '(flyspell-prog))
+(setq python-fill-docstring-style 'pep-257-nn)
 
 ;; MIT Scheme
 ;(atc:autoload-mode 'scheme-mode "xscheme" "\\.scm$")
@@ -171,7 +172,7 @@
 (eval-after-load "tex"
   '(progn
      (add-to-list 'TeX-command-list
-                  '("Make" "make" TeX-run-TeX t t)
+                  '("Make" "make" TeX-run-compile t t)
                   t)
      (add-to-list 'TeX-command-list
                   '("Make PS" "make %f" TeX-run-compile t t)
@@ -287,3 +288,39 @@
 
 ;; Javascript
 (add-hook 'js-mode-hook #'atc:flyspell-prog-mode)
+
+;; Utilities for Elisp programming
+(defmacro time-it (&rest code)
+  "Time CODE, repeating it to get an accurate timing.
+
+Returns a string giving the pretty-printed time per iteration and
+the number of iterations executed."
+
+  (let ((start-time (gensym "start-time"))
+        (iters (gensym "iters"))
+        (delta (gensym "delta"))
+        (i (gensym "i")))
+    `(let ((,iters 1) (,delta 0))
+       ;; Repeat until we reach a threshold delta
+       (while (< ,delta 0.5)
+         (let ((,i 0) (,start-time (get-internal-run-time)))
+           (while (< ,i ,iters)
+             ,@code
+             (setq ,i (1+ ,i)))
+           (setq ,delta (float-time (time-subtract (get-internal-run-time)
+                                                   ,start-time))
+                 ,iters (* ,iters 2))))
+       (time-it--format ,delta (/ ,iters 2)))))
+
+(defun time-it--format (total iters)
+  (let ((factors `((,(* 24 60 60) "day") (,(* 60 60) "hour") (60 "minute")
+                   (1 "second") (1e-3 "millisecond") (1e-6 "microsecond")
+                   (1e-9 "nanosecond")))
+        (secs (/ total iters)))
+    (while (and (cdr factors) (< secs (caar factors)))
+      (setq factors (cdr factors)))
+    (concat (format "%g %s" (/ secs (caar factors)) (cadar factors))
+            (if (/= (/ secs (caar factors)) 1) "s")
+            " ("
+            (if (/= (caar factors) 1) (format "%ss, " secs))
+            (format "%d iterations)" iters))))
