@@ -92,7 +92,7 @@
 
 ;; Load customization files
 (load "atc-basic")
-(atc:setup-user "Austin Clements" "amdragon@mit.edu")
+(atc:setup-user "Austin Clements" "aclements@csail.mit.edu")
 (atc:basic-setup-all)
 (load "atc-programming")
 
@@ -106,15 +106,17 @@
 (add-hook 'git-commit-mode-hook 'flyspell-mode)
 
 (custom-set-faces
-  ;; custom-set-faces was added by Custom.
-  ;; If you edit it by hand, you could mess it up, so be careful.
-  ;; Your init file should contain only one such instance.
-  ;; If there is more than one, they won't work right.
+ ;; custom-set-faces was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
  '(highlight ((((class color) (min-colors 88) (background dark)) (:background "navy"))))
  '(mmm-default-submode-face ((((background dark)) (:background "DimGray")) (t (:background "LightGray")))))
 (custom-set-variables
-  ;; custom-set-variables was added by Custom.
-  ;; If you edit it by hand, you could mess it up, so be careful.
-  ;; Your init file should contain only one such instance.
-  ;; If there is more than one, they won't work right.
- '(quack-programs (quote ("mzscheme" "bigloo" "csi" "csi -hygienic" "gosh" "gracket" "gsi" "gsi ~~/syntax-case.scm -" "guile" "kawa" "mit-scheme" "racket" "racket -il typed/racket" "rs" "scheme" "scheme48" "scsh" "sisc" "stklos" "sxi"))))
+ ;; custom-set-variables was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ '(grep-template "setopt csh_null_glob; grep <X> <C> -nH -e <R> <F>")
+ '(quack-programs (quote ("mzscheme" "bigloo" "csi" "csi -hygienic" "gosh" "gracket" "gsi" "gsi ~~/syntax-case.scm -" "guile" "kawa" "mit-scheme" "racket" "racket -il typed/racket" "rs" "scheme" "scheme48" "scsh" "sisc" "stklos" "sxi")))
+ '(send-mail-function (quote sendmail-send-it)))
