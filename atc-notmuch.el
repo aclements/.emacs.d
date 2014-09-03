@@ -1,7 +1,5 @@
 (when (file-directory-p "~/sandbox/notmuch/emacs")
   (setq load-path (cons "~/sandbox/notmuch/emacs" load-path))
-  (setenv "PATH" (concat "/home/amthrax/sandbox/notmuch:" (getenv "PATH")))
-  (setq exec-path (cons "/home/amthrax/sandbox/notmuch" exec-path))
   (require 'notmuch)
 
   ;; XXX Use bold for low-color displays and maybe only for dark
