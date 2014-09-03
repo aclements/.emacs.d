@@ -12,4 +12,11 @@
 
   (setq notmuch-fcc-dirs "Sent")
 
-  (setq frame-background-mode 'dark))
+  (setq frame-background-mode 'dark)
+
+  (setq message-citation-line-format "On %a, %d %b %Y, %f wrote:"
+        message-citation-line-function 'message-insert-formatted-citation-line)
+
+  (require 'notmuch-address)
+  (setq notmuch-address-command "/home/amthrax/bin/nottoomuch-addresses.sh")
+  (notmuch-address-message-insinuate))
