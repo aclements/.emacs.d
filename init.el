@@ -6,7 +6,7 @@
 ;; M-x byte-compile-file RET
 ;; Give it the .el file
 
-(message "Loading .emacs")
+(message "Loading init.el")
 
 ;; XXX Figure out when auto-fill-function gets set globally to
 ;; c-do-auto-fill and breaks everything.
@@ -59,32 +59,24 @@
 (setq emacs23 (>= emacs-major-version 23))
 
 ;; Set appropriate load-path
-(defun atc:add-to-load-path-maybe (path msg append fatal)
-  (if (and (string-match "^~/" path) init-file-user)
-      (setq path (concat "~" init-file-user (substring path 1))))
-  (if (not (file-accessible-directory-p path))
-      (if fatal
-          (error msg)
-        (message msg))
-    (add-to-list 'load-path path append)))
-(atc:add-to-load-path-maybe
- "~/sys/elisp" "Failed to find elisp directory" nil t)
+(defun atc:add-to-load-path (path &optional append fatal)
+  (setq path (expand-file-name path user-emacs-directory))
+  (if (file-accessible-directory-p path)
+      (add-to-list 'load-path path append)
+    (let ((msg (format "%s does not exist" path)))
+      (if fatal (error "%s" msg) (message "%s" msg)))))
 
-(atc:add-to-load-path-maybe
- "~/sys/elisp/extra" "Failed to find user-local packages" t nil)
+(atc:add-to-load-path "lisp" nil t)
+
+(atc:add-to-load-path "extra" 'append)
 ;; XXX I wish there was a way to load the _latest_ version of these
 ;; override packages, since mine are sure to get out of date
-(atc:add-to-load-path-maybe
- "~/sys/elisp/extra-pre" "Failed to find user-local override packages"
- nil nil)
+(atc:add-to-load-path "extra-pre")
 
 (unless emacs22
-  (atc:add-to-load-path-maybe
-   "~/sys/elisp/extra.21"
-   "Failed to find Emacs 21 user-local packages" t nil)
-  (atc:add-to-load-path-maybe
-   "~/sys/elisp/extra-pre.21"
-   "Failed to find Emacs 21 user-local override packages" nil nil))
+  ;; User-local packages for Emacs 21
+  (atc:add-to-load-path "extra.21" 'append)
+  (atc:add-to-load-path "extra-pre.21"))
 
 (setq atc-load-fast
       (let ((env (getenv "EMACS_LOAD_FAST")))
