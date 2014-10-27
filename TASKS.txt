@@ -1,0 +1,8 @@
+* Standardize keys for comment region and compile
+
+* Make arrows automatically skip over basic-offset spaces to emulate
+  tab-like motion
+
+* Make compilation-mode better.  It should be able to scroll the
+  output as it appears until the first error appears, then stay there.
+  It should also go away automatically if no errors occur.

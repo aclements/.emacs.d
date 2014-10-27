@@ -17,43 +17,6 @@
 (setq amdragon-monitor-auto-fill-timer
       (run-with-idle-timer 0.1 t #'amdragon-monitor-auto-fill))
 
-;; Things to fix
-;; * Make run-scheme use xscheme from the get-go
-;; * refill in latex-mode
-;; * Replace xscheme
-;; * lua-mode
-;; * Colorize column violations
-;; * Try custom-set-variables to make things better behaved
-;; * Standardize keys for comment region and compile
-;; * Make arrows automatically skip over basic-offset spaces to
-;;   emulate tab-like motion
-;; * Make compilation-mode better.  It should be able to scroll the
-;;   output as it appears until the first error appears, then stay
-;;   there.  It should also go away automatically if no errors occur.
-;; * isearch should work in the electric buffer list
-;; * magic-buffer-list
-;; * Better bookmarks system
-;; ** Place overlay arrows by bookmark markers
-;; ** Jump to bookmark should display an electric buffer showing the
-;;    context of each bookmark (one line above and below).  Either all
-;;    bookmarks or just buffer bookmarks.  Order by position in file
-;;    (recentness is hard to code, and probably harder to use)
-;; ** Integrate with magic-buffer-list.  Hit 'b' on buffer line to
-;;    bring up bookmarks menu for that buffer.  Add a getter for
-;;    number of bookmarks
-;; ** Ability to save bookmarks between sessions, like save-place (the
-;;    existing bookmarks system looks like it does this well)
-;;
-;;
-;; Thing I think are fixed, but need more testing
-;; * Flyspell on non-comments
-;; * Fix else/catch vs auto-hungry thing
-;; * auto-fill in c-mode
-;; * ebackup
-;; * newline-and-indent in LaTeX
-;; * Brace insertion in C++ (look at skeleton.el)
-;; * gnuclient/emacsclient with a new frame
-
 ;; Make it easy to test for Emacs 22
 (setq emacs22 (>= emacs-major-version 22))
 (setq emacs23 (>= emacs-major-version 23))
