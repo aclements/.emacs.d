@@ -137,13 +137,12 @@ unnecessary whitespace."
         inhibit-startup-buffer-menu  t
         query-replace-lazy-highlight t
         default-indicate-buffer-boundaries t
-        mouse-autoselect-window      t)
+        mouse-autoselect-window      t
+        initial-scratch-message      nil)
   ;; `set-fringe-mode' doesn't exist if Emacs is compiled without
   ;; windowing support
   (when (fboundp 'set-fringe-mode)
     (set-fringe-mode 5))
-  (when emacs23
-    (setq initial-scratch-message nil))
 
   ;; Improved ps-print defaults
   (setq ps-landscape-mode t

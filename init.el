@@ -17,9 +17,6 @@
 (setq amdragon-monitor-auto-fill-timer
       (run-with-idle-timer 0.1 t #'amdragon-monitor-auto-fill))
 
-;; Make it easy to test for Emacs 22
-(setq emacs23 (>= emacs-major-version 23))
-
 ;; Set appropriate load-path
 (defun atc:add-to-load-path (path &optional append fatal)
   (setq path (expand-file-name path user-emacs-directory))

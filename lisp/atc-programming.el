@@ -69,10 +69,8 @@
 ;;      compilation-context-lines 1
       compilation-scroll-output t)
 
-(if emacs23
-    ;; This doesn't auto-hide if there are no errors
-    (setq compilation-scroll-output 'first-error)
-  (load "compile-improved.el"))
+;; XXX This doesn't auto-hide if there are no errors
+(setq compilation-scroll-output 'first-error)
 
 ;;; Set up individual language modes
 
