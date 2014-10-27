@@ -4,25 +4,6 @@
 ;; then close the compile window and show a useful message.
 
 
-;; Grrrrrr.  There's a bug in compilation-set-window-height that makes
-;; it often fail.  window-width returns 1 more than the frame-width
-;; because the cursor can go in the fringe (I assume).
-(when emacs22
-  ;; Simplified version.  This is a complete and total hack, but I
-  ;; don't care right now.
-  (eval-after-load "compile"
-    '(defun compilation-set-window-height (window)
-       (let ((height (buffer-local-value 'compilation-window-height (window-buffer window))))
-         (and height
-              ;; If window is alone in its frame, aside from a minibuffer,
-              ;; don't change its height.
-              (not (eq window (frame-root-window (window-frame window))))
-              ;; Stef said that doing the saves in this order is safer:
-              (save-excursion
-                (save-selected-window
-                  (select-window window)
-                  (enlarge-window (- height (window-height))))))))))
-
 (defun compilation-finish-hide-or-jump (buf msg)
   (with-current-buffer buf
     (message "Point %s" (point))

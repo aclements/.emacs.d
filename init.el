@@ -18,7 +18,6 @@
       (run-with-idle-timer 0.1 t #'amdragon-monitor-auto-fill))
 
 ;; Make it easy to test for Emacs 22
-(setq emacs22 (>= emacs-major-version 22))
 (setq emacs23 (>= emacs-major-version 23))
 
 ;; Set appropriate load-path
@@ -35,11 +34,6 @@
 ;; XXX I wish there was a way to load the _latest_ version of these
 ;; override packages, since mine are sure to get out of date
 (atc:add-to-load-path "extra-pre")
-
-(unless emacs22
-  ;; User-local packages for Emacs 21
-  (atc:add-to-load-path "extra.21" 'append)
-  (atc:add-to-load-path "extra-pre.21"))
 
 (setq atc-load-fast
       (let ((env (getenv "EMACS_LOAD_FAST")))

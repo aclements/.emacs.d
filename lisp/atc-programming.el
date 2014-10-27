@@ -82,8 +82,6 @@
 (load "atc-cc")
 
 ;; Python
-(unless emacs22
-  (atc:autoload-mode 'python-mode "python-mode" "\\.py$" "python"))
 (atc:add-mode-features 'python-mode-hook '(flyspell-prog))
 (setq python-fill-docstring-style 'pep-257-nn)
 
@@ -202,15 +200,6 @@
                     '("^pdf$" "." "evince %(evincepagelabel)%o")))))
 
 ;;; Fix flyspell
-
-;; Flyspell has major issues when replaying keyboard macros.  I don't
-;; know if this fix will correctly check all changes made by keyboard
-;; macros (I think it will), but it's well worth it
-(unless emacs22
-  (defadvice flyspell-post-command-hook (around flyspell-in-macros-bug
-                                                activate)
-    (unless executing-kbd-macro
-      ad-do-it)))
 
 ;; flyspell only knows about tex-mode by default
 ;; Not necessary with new version of flyspell

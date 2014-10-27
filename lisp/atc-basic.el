@@ -41,9 +41,7 @@ present, and this doesn't hurt."
   "Sets up miscellaneous aspects of buffer look and feel."
   (setq truncate-partial-width-windows nil
         column-number-mode             t
-        frame-title-format             '("%b" " - " invocation-name))
-  (unless emacs22                       ; Enabled by default
-    (global-font-lock-mode t)))
+        frame-title-format             '("%b" " - " invocation-name)))
 
 (defun atc:setup-mode-line ()
   "Move the useful, short, non-static information to earlier in the
@@ -93,9 +91,6 @@ unnecessary whitespace."
 
 (defun atc:setup-misc-usability ()
   "Sets up lots of miscellaneous usability features"
-  (unless emacs22                       ; Enabled by default
-    (mouse-wheel-mode t))
-
   ;; Save buffer positions between sessions
   (when (require 'saveplace nil t)
     (setq-default save-place t)
@@ -131,10 +126,6 @@ unnecessary whitespace."
       "Minor mode for automatically wrapping long lines." t)
     (setq longlines-show-hard-newlines t))
 
-  ;; Auto compression mode
-  (unless emacs22                       ; Enabled by default
-    (auto-compression-mode 1))
-
   ;; Outed mode
   (when (locate-library "outed-mode")
     (autoload 'outed-mode "outed-mode"
@@ -142,16 +133,15 @@ unnecessary whitespace."
 
   ;; Misc usability variables
   (setq inhibit-startup-message     t
-        x-stretch-cursor            t)
-  (when emacs22
-    (setq inhibit-startup-buffer-menu  t
-          query-replace-lazy-highlight t
-          default-indicate-buffer-boundaries t
-          mouse-autoselect-window      t)
-    ;; `set-fringe-mode' doesn't exist if Emacs is compiled without
-    ;; windowing support
-    (when (fboundp 'set-fringe-mode)
-      (set-fringe-mode 5)))
+        x-stretch-cursor            t
+        inhibit-startup-buffer-menu  t
+        query-replace-lazy-highlight t
+        default-indicate-buffer-boundaries t
+        mouse-autoselect-window      t)
+  ;; `set-fringe-mode' doesn't exist if Emacs is compiled without
+  ;; windowing support
+  (when (fboundp 'set-fringe-mode)
+    (set-fringe-mode 5))
   (when emacs23
     (setq initial-scratch-message nil))
 
@@ -196,19 +186,15 @@ unnecessary whitespace."
 (defun atc:disable-ange-ftp ()
   "Disables Ange FTP filename completion.  Having this enabled can
 really slow things down."
-  ;; Emacs 22 doesn't have Ange FTP in the file name handler list
-  (unless emacs22
-    (let ((fnha file-name-handler-alist))
-      (while fnha
-        (if (string-match "^ange-.*" (symbol-name (cdar fnha)))
-            (setq file-name-handler-alist
-                  (delq (car fnha) file-name-handler-alist)))
-        (setq fnha (cdr fnha))))))
+  (let ((fnha file-name-handler-alist))
+    (while fnha
+      (if (string-match "^ange-.*" (symbol-name (cdar fnha)))
+          (setq file-name-handler-alist
+                (delq (car fnha) file-name-handler-alist)))
+      (setq fnha (cdr fnha)))))
 
 (defun atc:setup-global-bindings ()
   "Sets useful global bindings."
-  (unless emacs22                       ; Default
-    (global-set-key "\M-g\M-g" (function goto-line)))
   (if (require 'magic-buffer-list nil t)
       (progn
         (global-set-key "\C-x\C-b" (function magic-buffer-list))
