@@ -251,22 +251,8 @@ started by emacsclient."
   (interactive "P")
   (if (and (fboundp 'server-save-buffers-kill-terminal)
            (frame-parameter (selected-frame) 'client))
-      ;; Emacs >= 23
+      ;; Frame came from emacsclient
       (server-save-buffers-kill-terminal arg)
-    (when (and (not (fboundp 'server-save-buffers-kill-terminal))
-               (featurep 'server))
-      ;; Emacs <= 22
-      ;; For each window in this frame, if the buffer in that window
-      ;; came from the Emacs server, see if this is the only window
-      ;; containing that buffer and kill it if so
-      (walk-windows (lambda (wnd)
-                      (save-excursion
-                        (let ((buffer (window-buffer wnd)))
-                          (if (and server-buffer-clients
-                                   (null (cdr (get-buffer-window-list buffer))))
-                              (kill-buffer buffer)))))
-                    nil
-                    (selected-frame)))
     ;; If there are multiple frames, kill just this frame
     (let ((frames (frame-list)))
       (if (and frames (cdr frames))

@@ -244,31 +244,10 @@
                '(latex-mode "\\.lhs$" literate-haskell)))
 
 ;; XML
-(if (fboundp 'nxml-mode)
-    ;; Emacs 23
-    (progn
-      (fset 'html-mode 'nxml-mode)
-      (add-to-list 'magic-mode-alist '("<\\?xml " . nxml-mode)))
-  ;; Emacs <= 22
-  (when (load "nxml-mode/rng-auto" t)
-    (add-to-list 'auto-mode-alist
-                 '("\\.\\(xml\\|xsl\\|rng\\|xhtml\\)\\'" . nxml-mode))
-    ;; Based on http://www.emacswiki.org/cgi-bin/wiki/NxmlMode
-    (fset 'xml-mode 'nxml-mode)
-    (fset 'html-mode 'nxml-mode)
-    (if (boundp 'magic-mode-alist)
-        ;; Emacs 22
-        (add-to-list 'magic-mode-alist '("<\\?xml " . nxml-mode))
-      ;; Emacs <= 21
-      (add-hook 'hack-local-variables-hook
-                (lambda ()
-                  (save-excursion
-                    (goto-char (point-min))
-                    (when (looking-at "^<\\?xml ")
-                      (nxml-mode))))))))
-(when (fboundp 'nxml-mode)
-  (atc:add-mode-features 'nxml-mode-hook
-                         '(flyspell-full autofill)))
+(fset 'html-mode 'nxml-mode)
+(add-to-list 'magic-mode-alist '("<\\?xml " . nxml-mode))
+(atc:add-mode-features 'nxml-mode-hook
+                       '(flyspell-full autofill))
 
 (defun atc:flyspell-prog-mode ()
   (when-ispell-works (flyspell-prog-mode)))
