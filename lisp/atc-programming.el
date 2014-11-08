@@ -209,7 +209,7 @@
 ;;                                                  flyspell-prog))
 
 ;; RSCC Grammar
-(atc:autoload-mode 'rsccg-mode "rsccg-mode" "\\.g$")
+;;(atc:autoload-mode 'rsccg-mode "rsccg-mode" "\\.g$")
 
 ;; Haskell
 ;; XXX
