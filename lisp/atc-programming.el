@@ -255,6 +255,8 @@
 ;; Javascript
 (add-hook 'js-mode-hook #'atc:flyspell-prog-mode)
 
+(load "atc-go.el")
+
 ;; Utilities for Elisp programming
 (defmacro time-it (&rest code)
   "Time CODE, repeating it to get an accurate timing.
