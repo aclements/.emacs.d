@@ -136,6 +136,12 @@ This is not valid syntax in C, but can be in C-like languages."
                  tab-width 4
                  indent-tabs-mode t)
            (c-set-offset 'case-label '+))
+          ((string-match (concat "^" (regexp-quote (expand-file-name "~/go")))
+                         filename)
+           (message "Setting style for Go")
+           (c-set-style "bsd")
+           (setq comment-start "// "
+                 comment-end ""))
           )))
 ;; Don't decompress .z files.  This stopped working in Emacs 23.2 and
 ;; I don't use it any more.
