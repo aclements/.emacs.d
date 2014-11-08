@@ -33,7 +33,10 @@ present, and this doesn't hurt."
         (atc:set-frame-colors nil))
     ;; Set the foreground color, but don't set the background color.
     ;; This allows it to be transparent
-    (set-foreground-color "White")))
+    (set-foreground-color "White")
+    ;; Emacs can't guess the background color of the terminal, so tell
+    ;; it
+    (setq frame-background-mode 'dark)))
 
 ;;; Buffer look
 
