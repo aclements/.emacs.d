@@ -36,7 +36,15 @@
       (let ((env (getenv "EMACS_LOAD_FAST")))
         (and env (> (length env) 0))))
 
+;; Set up package manager
+(require 'package)
+(add-to-list 'package-archives
+             '("melpa" . "http://melpa.org/packages/") t)
+(package-initialize)
+
 ;; Load customization files
+(load "atc-want")
+
 (load "atc-basic")
 (atc:setup-user "Austin Clements" "aclements@csail.mit.edu")
 (atc:basic-setup-all)
