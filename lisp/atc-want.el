@@ -20,7 +20,7 @@
   (if (executable-find command)
       t
     (add-to-list 'atc:want--messages
-                 (format "Missing %s.  Run %s." command install) t)
+                 (format "Missing %s. %s" command install) t)
     (atc:want--ensure-report)
     nil))
 
@@ -29,7 +29,7 @@
          (append
           (when atc:want--packages
             (list
-             (format "Missing packages %s. Use M-x package-install."
+             (format "Missing packages %s. Use M-x package-install"
                      atc:want--packages)))
           atc:want--messages)))
     (message "%s" (mapconcat 'identity messages "\n")))
