@@ -25,12 +25,14 @@
     nil))
 
 (defun atc:want--report ()
-  (message "%s" (concat
-                 (when atc:want--packages
-                   (format "Missing packages: %s. Use M-x package-install."
-                           atc:want--packages))
-                 (when atc:want--messages
-                   (mapconcat 'identity atc:want--messages "\n"))))
+  (let ((messages
+         (append
+          (when atc:want--packages
+            (list
+             (format "Missing packages %s. Use M-x package-install."
+                     atc:want--packages)))
+          atc:want--messages)))
+    (message "%s" (mapconcat 'identity messages "\n")))
   (setq atc:want--packages nil
         atc:want--messages nil
         atc:want--timer nil))
