@@ -175,6 +175,9 @@ unnecessary whitespace."
   ;; Color completion
   (when (load "color-completion/color-completion" t)
     (global-color-completion t))
+
+  ;; Literal-mode
+  (require 'literal-mode)
   )
 
 ;;; General settings
