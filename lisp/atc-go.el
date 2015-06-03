@@ -16,15 +16,15 @@
   (flyspell-prog-mode))
 
 (eval-after-load 'go-mode
-  (progn
-    (add-hook 'go-mode-hook #'atc:go-mode-setup)
-    (when (atc:want-executable "gofmt" "Add Go to your PATH")
-      (add-hook 'before-save-hook #'gofmt-before-save))
-    (when (atc:want-executable "goimports" "Run go get code.google.com/p/go.tools/cmd/goimports")
-      (setq gofmt-command "goimports"))
-    (font-lock-add-keywords 'go-mode '(("\\.  " 0 'trailing-whitespace t)))
-    (load "~/r/go/src/golang.org/x/tools/cmd/oracle/oracle.el" t)
-    ))
+  '(progn
+     (add-hook 'go-mode-hook #'atc:go-mode-setup)
+     (when (atc:want-executable "gofmt" "Add Go to your PATH")
+       (add-hook 'before-save-hook #'gofmt-before-save))
+     (when (atc:want-executable "goimports" "Run go get code.google.com/p/go.tools/cmd/goimports")
+       (setq gofmt-command "goimports"))
+     (font-lock-add-keywords 'go-mode '(("\\.  " 0 'trailing-whitespace t)))
+     (load "~/r/go/src/golang.org/x/tools/cmd/oracle/oracle.el" t)
+     ))
 
 ;; Style for C/assembly code in Go trees
 ;; XXX Extend c-choose-style?  Still need this for assembly
