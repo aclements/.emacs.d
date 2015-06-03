@@ -13,6 +13,9 @@
     (set (make-local-variable 'company-backends) '(company-go))
     (company-mode))
 
+  ;; Replace find-tag with go-identify.
+  (local-set-key (kbd "M-.") #'go-identify)
+
   (flyspell-prog-mode))
 
 (eval-after-load 'go-mode
@@ -24,6 +27,7 @@
        (setq gofmt-command "goimports"))
      (font-lock-add-keywords 'go-mode '(("\\.  " 0 'trailing-whitespace t)))
      (load "~/r/go/src/golang.org/x/tools/cmd/oracle/oracle.el" t)
+     (require 'go-identify)
      ))
 
 ;; Style for C/assembly code in Go trees
