@@ -141,7 +141,8 @@ unnecessary whitespace."
         query-replace-lazy-highlight t
         default-indicate-buffer-boundaries t
         mouse-autoselect-window      t
-        initial-scratch-message      nil)
+        initial-scratch-message      nil
+        sentence-end-double-space    nil)
   ;; `set-fringe-mode' doesn't exist if Emacs is compiled without
   ;; windowing support
   (when (fboundp 'set-fringe-mode)
