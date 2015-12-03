@@ -46,3 +46,4 @@
 (setq company-idle-delay .3)
 (setq company-echo-delay 0)
 (setq company-go-insert-arguments nil)
+(setq company-go-show-annotation t)
