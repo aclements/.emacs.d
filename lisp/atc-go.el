@@ -4,12 +4,12 @@
   (setq sentence-end-double-space nil)
 
   ;; go-mode integrates godoc and godef support if they're installed
-  (atc:want-executable "godoc" "Run go get code.google.com/p/go.tools/cmd/godoc")
-  (atc:want-executable "godef" "Run go get code.google.com/p/rog-go/exp/cmd/godef")
+  (atc:want-executable "godoc" "Run go get golang.org/x/tools/cmd/godoc")
+  (atc:want-executable "godef" "Run go get github.com/rogpeppe/godef")
   (when (atc:want-fbound 'go-eldoc-setup 'go-eldoc)
     (go-eldoc-setup))
   (when (and (atc:want-fbound 'company-go 'company-go)
-             (atc:want-executable "gocode" "Run go get -u github.com/nsf/gocode"))
+             (atc:want-executable "gocode" "Run go get github.com/nsf/gocode"))
     (set (make-local-variable 'company-backends) '(company-go))
     (company-mode))
 
@@ -23,7 +23,7 @@
      (add-hook 'go-mode-hook #'atc:go-mode-setup)
      (when (atc:want-executable "gofmt" "Add Go to your PATH")
        (add-hook 'before-save-hook #'gofmt-before-save))
-     (when (atc:want-executable "goimports" "Run go get code.google.com/p/go.tools/cmd/goimports")
+     (when (atc:want-executable "goimports" "Run go get golang.org/x/tools/cmd/goimports")
        (setq gofmt-command "goimports"))
      (font-lock-add-keywords 'go-mode '(("\\.  " 0 'trailing-whitespace t)))
      (load "~/r/go/src/golang.org/x/tools/cmd/oracle/oracle.el" t)
