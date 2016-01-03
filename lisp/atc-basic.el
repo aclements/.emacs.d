@@ -182,6 +182,13 @@ unnecessary whitespace."
 
   ;; Enable line/column numbers in find-file.
   (require 'find-file-line nil t)
+
+  ;; The git-rebase command editor is simple and elegant and builds on
+  ;; everything you already know about your editor. git-rebase-mode
+  ;; turns it in to something complicated with its own rules and
+  ;; learning curve. Clearly this is progress.
+  (setq auto-mode-alist (delete '("/git-rebase-todo\\'" . git-rebase-mode)
+                                auto-mode-alist))
   )
 
 ;;; General settings
