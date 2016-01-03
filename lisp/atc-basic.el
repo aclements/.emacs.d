@@ -179,6 +179,9 @@ unnecessary whitespace."
 
   ;; Literal-mode
   (require 'literal-mode)
+
+  ;; Enable line/column numbers in find-file.
+  (require 'find-file-line nil t)
   )
 
 ;;; General settings
