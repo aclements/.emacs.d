@@ -47,3 +47,33 @@
 (setq company-echo-delay 0)
 (setq company-go-insert-arguments nil)
 (setq company-go-show-annotation t)
+
+(defun go-play ()
+  "Create a new Go buffer for playing in."
+  (interactive)
+  (let ((buf (generate-new-buffer "*go-play*")))
+    (switch-to-buffer buf)
+    (insert "package main
+
+import \"fmt\"
+
+func main() {
+	")
+    (let ((pt (point)))
+      (insert "fmt.Println(\"Hello world!\")
+}
+")
+      (goto-char pt))
+    (go-mode)))
+
+(defun go-run ()
+  "Run this buffer."
+  (interactive)
+  (gofmt)
+  (let ((path (make-temp-file "go-play" nil ".go")))
+    (unwind-protect
+        (save-restriction
+          (widen)
+          (write-region (point-min) (point-max) path)
+          (shell-command (format "go run %s" path) "*go-run*"))
+      (delete-file path))))
