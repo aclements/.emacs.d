@@ -81,19 +81,21 @@
 (defun go-identify--call-process-json (program &rest args)
   "Call PROGRAM synchronously with ARGS and parse its stdout as JSON."
   (with-temp-buffer
-    ;; TODO: Handle missing binary, error status, stderr, etc. This
-    ;; gives a confusing "End of file during parsing" error from JSON
-    ;; if the oracle failed (e.g., because there's no identifier at
-    ;; point).
-    (with-temp-message "Running oracle..."
-      (apply #'call-process program nil (list t nil) nil args))
-    (goto-char (point-min))
-    (let ((json-object-type 'alist)
-          (json-array-type 'vector)
-          (json-key-type 'symbol)
-          (json-false nil)
-          (json-null nil))
-      (json-read))))
+    (condition-case err
+        (progn
+          (with-temp-message "Running oracle..."
+            (let ((status (apply #'call-process program nil (list t t) nil args)))
+              (unless (= status 0)
+                (error "oracle failed with status %s" status))))
+          (goto-char (point-min))
+          (let ((json-object-type 'alist)
+                (json-array-type 'vector)
+                (json-key-type 'symbol)
+                (json-false nil)
+                (json-null nil))
+            (json-read)))
+      (error
+       (error "%s:\n%s" (error-message-string err) (buffer-string))))))
 
 (defun go-identify--identifier-at-point (pos)
   (save-excursion
