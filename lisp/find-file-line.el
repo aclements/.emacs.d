@@ -11,9 +11,15 @@
           (when s (setq col (string-to-number s))))
         (setq filename (match-string 1 filename))))
     ad-do-it
-    (when line
-      (goto-line line))
-    (when col
-      (move-to-column (- col 1)))))
+    (save-restriction
+      (widen)
+      (when line
+        ;; Push mark at current location (mostly useful if the file is
+        ;; already open).
+        (unless (region-active-p) (push-mark))
+        (goto-char (point-min))
+        (forward-line (- line 1)))
+      (when col
+        (move-to-column (- col 1))))))
 
 (provide 'find-file-line)
