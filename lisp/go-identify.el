@@ -136,10 +136,14 @@ list of lists is `equal' to LST."
 
 (defun go-identify--goto (filename &optional line col-byte)
   (find-file filename)
-  (when line
-    (goto-line line))
-  (when col-byte
-    (goto-char (byte-to-position (+ (position-bytes (point)) col-byte -1)))))
+  (unless (region-active-p) (push-mark))
+  (save-restriction
+    (widen)
+    (when line
+      (goto-char (point-min))
+      (forward-line (- line 1)))
+    (when col-byte
+      (goto-char (byte-to-position (+ (position-bytes (point)) col-byte -1))))))
 
 (defun go-identify--insert-path (path-pos)
   (let* ((path-parts (go-identify--parse-path path-pos))
