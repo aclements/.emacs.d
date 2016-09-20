@@ -1,10 +1,10 @@
 (defadvice find-file (around find-file-line
                              (filename &optional wildcards)
                              activate)
-  "Given a file name FILE[:N[:[C]]], open FILE and go to line N, column C."
+  "Given a file name FILE[:N[:[C:?]]], open FILE and go to line N, column C."
   (let (line col)
     (save-match-data
-      (when (string-match "\\(.*?\\)\\(?::\\([0-9]+\\)\\)?\\(?::\\([0-9]+\\)?\\)?$" filename)
+      (when (string-match "\\(.*?\\)\\(?::\\([0-9]+\\)\\(?::\\([0-9]+\\)\\)?:?\\)?$" filename)
         (let ((s (match-string 2 filename)))
           (when s (setq line (string-to-number s))))
         (let ((s (match-string 3 filename)))
