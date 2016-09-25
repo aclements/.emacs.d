@@ -585,6 +585,13 @@ and that satisfies the given reified repeat."
                    (by bm bd b))
     (tasks-compare-lists (list ay am ad) (list by bm bd))))
 
+(defun tasks-calendar-exit-sym ()
+  (cond
+   ;; Emacs 25 renamed exit-calendar to calendar-exit.
+   ((fboundp 'calendar-exit) 'calendar-exit)
+   ((fboundp 'exit-calendar) 'exit-calendar)
+   (t (error "cannot find `calendar-exit' symbol"))))
+
 (defun tasks-read-date ()
   (save-window-excursion
     ;; Start the calendar at the date preceding point
@@ -600,7 +607,8 @@ and that satisfies the given reified repeat."
     (let* ((cal-buf (current-buffer))
            (orig-map (current-local-map))
            (new-map (copy-keymap orig-map))
-           (old-exit-calendar (symbol-function 'exit-calendar))
+           (calendar-exit-sym (tasks-calendar-exit-sym))
+           (old-calendar-exit (symbol-function calendar-exit-sym))
            tasks-date-selected)
       ;; Bind RET in our augmented calendar keymap to set
       ;; tasks-date-selected and exit the recursive edit
@@ -613,21 +621,21 @@ and that satisfies the given reified repeat."
                                        (first cdate)
                                        (second cdate))))
           (throw 'exit nil)))
-      (define-key new-map (kbd "C-g") #'exit-calendar)
+      (define-key new-map (kbd "C-g") calendar-exit-sym)
       ;; Enter a recursive edit inside the calendar, using our
       ;; augmented local keymap and a new definition of
-      ;; exit-calendar.
+      ;; calendar-exit.
       (unwind-protect
           (progn
-            (fset 'exit-calendar
+            (fset calendar-exit-sym
                   (lambda () (interactive) (throw 'exit nil)))
             (use-local-map new-map)
             (recursive-edit))
         ;; Restore the map and exit-calendar
         (use-local-map orig-map)
-        (fset 'exit-calendar old-exit-calendar))
+        (fset calendar-exit-sym old-calendar-exit))
       (with-current-buffer cal-buf
-        (exit-calendar))
+        (funcall calendar-exit-sym))
       (or tasks-date-selected
           (error "No date selected")))))
 
