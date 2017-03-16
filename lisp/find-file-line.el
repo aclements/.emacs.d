@@ -20,6 +20,7 @@
         (goto-char (point-min))
         (forward-line (- line 1)))
       (when col
-        (move-to-column (- col 1))))))
+        ;; Clang, GCC, and Go all use a 1-based byte offset into the line.
+        (goto-char (byte-to-position (+ col -1 (position-bytes (line-beginning-position)))))))))
 
 (provide 'find-file-line)
