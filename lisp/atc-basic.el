@@ -18,6 +18,18 @@ scroll bar."
   (when menu-bar-mode (menu-bar-mode -1))
   (set-scroll-bar-mode nil))
 
+(defun atc:set-faces ()
+  ;; Setting this through customize for the default face causes it to
+  ;; be lost when the display changes DPI because customize doesn't
+  ;; set the :user-spec of the font correctly. DPI changes fire a
+  ;; GConf config-changed-event special event, which triggers
+  ;; dynamic-setting-handle-config-changed-event with (I think) a
+  ;; font-render event, which tries to reset the same font using its
+  ;; :user-spec.
+  (when (equal (system-name) "austin2")
+    ;; 4K work laptop. Need a scalable font.
+    (set-frame-font "Source Code Pro 9" nil t)))
+
 (defun atc:set-frame-colors (frame)
   "Set the frame color scheme for `frame'."
   (modify-frame-parameters frame '((background-color . "Black")
@@ -348,6 +360,7 @@ is minibuffer."
 (defun atc:basic-setup-all ()
   "Sets up everything in atc-basic, except `atc:setup-user'."
   (atc:defluff)
+  (atc:set-faces)
   (atc:setup-colors)
   (atc:setup-buffer-look)
   (atc:setup-mode-line)
